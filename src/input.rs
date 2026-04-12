@@ -1,6 +1,8 @@
 use crate::config::{
-    FAST_MULTIPLIER, MOVE_SPEED_PX_PER_SEC, SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER,
-    TICK_RATE_HZ,
+    FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
+    KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
+    KEY_NORMAL_MODE, KEY_QUIT, KEY_RIGHT_CLICK, MOVE_SPEED_PX_PER_SEC,
+    SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
@@ -188,7 +190,7 @@ fn handle_key_release(
 }
 
 fn handle_insert_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
-    if key == Key::Escape {
+    if key == KEY_NORMAL_MODE {
         set_mode(state, Mode::Normal, actions);
     }
 }
@@ -220,17 +222,17 @@ fn handle_normal_key_press(
         flush_deferred_modifiers(hook_state, &mut outcome.passthrough_events);
     }
 
-    if key == Key::Escape {
+    if key == KEY_NORMAL_MODE {
         set_mode(state, Mode::Normal, &mut outcome.actions);
         return suppress_event;
     }
 
-    if key == Key::KeyI && exact_single_key(&state.pressed_keys, key) && !is_repeat {
+    if key == KEY_INSERT_MODE && exact_single_key(&state.pressed_keys, key) && !is_repeat {
         set_mode(state, Mode::Insert, &mut outcome.actions);
         return suppress_event;
     }
 
-    if key == Key::BackQuote && exact_single_key(&state.pressed_keys, key) && !is_repeat {
+    if key == KEY_CYCLE_MONITOR && exact_single_key(&state.pressed_keys, key) && !is_repeat {
         cycle_monitor(state);
         return suppress_event;
     }
@@ -490,12 +492,12 @@ fn consume_synthetic_passthrough(_hook_state: &mut HookState, _event_type: Event
 
 // Quit only when the chord is exactly Ctrl+Shift+Q, with no extra keys mixed in.
 fn is_quit_chord(keys: &HashSet<Key>) -> bool {
-    keys.contains(&Key::KeyQ)
+    keys.contains(&KEY_QUIT)
         && keys.iter().any(|key| is_control_key(*key))
         && keys.iter().any(|key| is_shift_key(*key))
         && keys
             .iter()
-            .all(|key| *key == Key::KeyQ || is_control_key(*key) || is_shift_key(*key))
+            .all(|key| *key == KEY_QUIT || is_control_key(*key) || is_shift_key(*key))
 }
 
 fn should_suppress_normal_key_press(keys: &HashSet<Key>, key: Key) -> bool {
@@ -509,7 +511,7 @@ fn is_reserved_normal_combo_key(key: Key) -> bool {
 }
 
 fn is_single_key_binding(key: Key) -> bool {
-    key == Key::Escape || key == Key::KeyI || key == Key::BackQuote || jump_cell(key).is_some()
+    key == KEY_NORMAL_MODE || key == KEY_INSERT_MODE || key == KEY_CYCLE_MONITOR || jump_cell(key).is_some()
 }
 
 // Movement accepts Ctrl (fast) or Alt (slow) speed modifiers and held mouse buttons for dragging.
@@ -523,8 +525,8 @@ fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
         is_movement_key(*key)
             || is_control_key(*key)
             || is_alt_key(*key)
-            || *key == Key::SemiColon
-            || *key == Key::CapsLock
+            || *key == KEY_LEFT_CLICK
+            || *key == KEY_RIGHT_CLICK
     })
 }
 
@@ -534,8 +536,8 @@ fn is_valid_button_set(keys: &HashSet<Key>, button_key: Key) -> bool {
         is_movement_key(*key)
             || is_control_key(*key)
             || is_alt_key(*key)
-            || *key == Key::SemiColon
-            || *key == Key::CapsLock
+            || *key == KEY_LEFT_CLICK
+            || *key == KEY_RIGHT_CLICK
     }) && keys.contains(&button_key)
 }
 
@@ -556,16 +558,16 @@ fn normalized_direction(keys: &HashSet<Key>) -> Option<Point> {
     let mut x: f64 = 0.0;
     let mut y: f64 = 0.0;
 
-    if keys.contains(&Key::KeyH) {
+    if keys.contains(&KEY_MOVE_LEFT) {
         x -= 1.0;
     }
-    if keys.contains(&Key::KeyL) {
+    if keys.contains(&KEY_MOVE_RIGHT) {
         x += 1.0;
     }
-    if keys.contains(&Key::KeyJ) {
+    if keys.contains(&KEY_MOVE_DOWN) {
         y += 1.0;
     }
-    if keys.contains(&Key::KeyK) {
+    if keys.contains(&KEY_MOVE_UP) {
         y -= 1.0;
     }
 
@@ -583,10 +585,10 @@ fn normalized_direction(keys: &HashSet<Key>) -> Option<Point> {
 fn speed_multiplier(keys: &HashSet<Key>) -> f64 {
     let mut multiplier = 1.0;
 
-    if keys.iter().any(|key| is_control_key(*key)) {
+    if keys.iter().any(|key| KEYS_FAST.contains(key)) {
         multiplier *= FAST_MULTIPLIER;
     }
-    if keys.iter().any(|key| is_alt_key(*key)) {
+    if keys.iter().any(|key| KEYS_SLOW.contains(key)) {
         multiplier *= SLOW_MULTIPLIER;
     }
 
@@ -595,40 +597,30 @@ fn speed_multiplier(keys: &HashSet<Key>) -> f64 {
 
 // The quick-jump grid is laid out as a 5x3 matrix over the selected monitor.
 fn jump_cell(key: Key) -> Option<(usize, usize)> {
-    match key {
-        Key::KeyQ => Some((0, 0)),
-        Key::KeyW => Some((1, 0)),
-        Key::KeyE => Some((2, 0)),
-        Key::KeyR => Some((3, 0)),
-        Key::KeyT => Some((4, 0)),
-        Key::KeyA => Some((0, 1)),
-        Key::KeyS => Some((1, 1)),
-        Key::KeyD => Some((2, 1)),
-        Key::KeyF => Some((3, 1)),
-        Key::KeyG => Some((4, 1)),
-        Key::KeyZ => Some((0, 2)),
-        Key::KeyX => Some((1, 2)),
-        Key::KeyC => Some((2, 2)),
-        Key::KeyV => Some((3, 2)),
-        Key::KeyB => Some((4, 2)),
-        _ => None,
+    for (row, keys) in JUMP_GRID.iter().enumerate() {
+        for (col, grid_key) in keys.iter().enumerate() {
+            if *grid_key == key {
+                return Some((col, row));
+            }
+        }
     }
+    None
 }
 
 fn is_movement_key(key: Key) -> bool {
-    matches!(key, Key::KeyH | Key::KeyJ | Key::KeyK | Key::KeyL)
+    key == KEY_MOVE_LEFT || key == KEY_MOVE_DOWN || key == KEY_MOVE_UP || key == KEY_MOVE_RIGHT
 }
 
 fn is_shift_key(key: Key) -> bool {
-    matches!(key, Key::ShiftLeft | Key::ShiftRight)
+    KEYS_SCROLL.contains(&key)
 }
 
 fn is_alt_key(key: Key) -> bool {
-    matches!(key, Key::Alt | Key::AltGr)
+    KEYS_SLOW.contains(&key)
 }
 
 fn is_control_key(key: Key) -> bool {
-    matches!(key, Key::ControlLeft | Key::ControlRight)
+    KEYS_FAST.contains(&key)
 }
 
 fn is_meta_key(key: Key) -> bool {
@@ -640,9 +632,11 @@ fn is_modifier_key(key: Key) -> bool {
 }
 
 fn button_from_key(key: Key) -> Option<Button> {
-    match key {
-        Key::SemiColon => Some(Button::Left),
-        Key::CapsLock => Some(Button::Right),
-        _ => None,
+    if key == KEY_LEFT_CLICK {
+        Some(Button::Left)
+    } else if key == KEY_RIGHT_CLICK {
+        Some(Button::Right)
+    } else {
+        None
     }
 }
