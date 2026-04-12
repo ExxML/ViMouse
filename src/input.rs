@@ -25,7 +25,9 @@ struct DeferredModifier {
 struct HookState {
     deferred_modifiers: Vec<DeferredModifier>,
     suppressed_keys: HashSet<Key>,
-    #[cfg(target_os = "windows")]
+    // Windows and macOS re-deliver synthetic events back through the grab hook,
+    // so we track pending passthroughs to skip them on those platforms.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     synthetic_passthrough: Vec<EventType>,
 }
 
@@ -467,15 +469,15 @@ fn flush_deferred_modifiers(hook_state: &mut HookState, passthrough_events: &mut
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn record_synthetic_passthrough(hook_state: &mut HookState, event_type: EventType) {
     hook_state.synthetic_passthrough.push(event_type);
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 fn record_synthetic_passthrough(_hook_state: &mut HookState, _event_type: EventType) {}
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn consume_synthetic_passthrough(hook_state: &mut HookState, event_type: EventType) -> bool {
     if hook_state.synthetic_passthrough.first() == Some(&event_type) {
         hook_state.synthetic_passthrough.remove(0);
@@ -485,7 +487,7 @@ fn consume_synthetic_passthrough(hook_state: &mut HookState, event_type: EventTy
     false
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 fn consume_synthetic_passthrough(_hook_state: &mut HookState, _event_type: EventType) -> bool {
     false
 }
