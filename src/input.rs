@@ -4,7 +4,7 @@ use crate::config::{
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
-use rdev::{grab, simulate, Button, Event, EventType, Key, SimulateError};
+use rdev::{listen, simulate, Button, Event, EventType, Key, SimulateError};
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::thread;
@@ -18,10 +18,9 @@ pub fn spawn_input_hook(shared: Shared) {
         .name("vimouse-hook".into())
         .spawn(move || {
             let hook_shared = shared.clone();
-            // `grab` lets us suppress mouse-mode bindings before apps receive them.
             let callback = move |event: Event| handle_input_event(&hook_shared, event);
-            if let Err(error) = grab(callback) {
-                eprintln!("global input grab failed: {error:?}");
+            if let Err(error) = listen(callback) {
+                eprintln!("global input listen failed: {error:?}");
             }
         })
         .expect("failed to spawn input hook thread");
@@ -56,27 +55,24 @@ pub fn spawn_motion_loop(shared: Shared) {
         .expect("failed to spawn motion loop thread");
 }
 
-// The grab callback is the single entry point for all global keyboard state changes.
-fn handle_input_event(shared: &Shared, event: Event) -> Option<Event> {
+fn handle_input_event(shared: &Shared, event: Event) {
     let mut actions = Vec::new();
-    let forwarded_event = {
+    {
         let mut state = shared.lock().expect("shared state poisoned");
         match event.event_type {
             EventType::MouseMove { x, y } => {
                 update_cursor(&mut state, Point { x, y });
-                Some(event)
             }
-            EventType::KeyPress(key) => handle_key_press(&mut state, key, event, &mut actions),
+            EventType::KeyPress(key) => handle_key_press(&mut state, key, &mut actions),
             EventType::KeyRelease(key) => {
                 state.pressed_keys.remove(&key);
-                handle_key_release(&mut state, key, event, &mut actions)
+                handle_key_release(&mut state, key, &mut actions);
             }
-            _ => Some(event),
+            _ => {}
         }
-    };
+    }
 
     dispatch_actions(&actions);
-    forwarded_event
 }
 
 fn update_cursor(state: &mut SharedState, cursor: Point) {
@@ -86,115 +82,67 @@ fn update_cursor(state: &mut SharedState, cursor: Point) {
     }
 }
 
-fn handle_key_press(
-    state: &mut SharedState,
-    key: Key,
-    event: Event,
-    actions: &mut Vec<Action>,
-) -> Option<Event> {
+fn handle_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
     let is_repeat = !state.pressed_keys.insert(key);
     if !is_repeat && is_quit_chord(&state.pressed_keys) {
         std::process::exit(0);
     }
 
     match state.mode {
-        Mode::Insert => handle_insert_key_press(state, key, event, actions),
-        Mode::Normal => handle_normal_key_press(state, key, is_repeat, event, actions),
+        Mode::Insert => handle_insert_key_press(state, key, actions),
+        Mode::Normal => handle_normal_key_press(state, key, is_repeat, actions),
     }
 }
 
-fn handle_key_release(
-    state: &mut SharedState,
-    key: Key,
-    event: Event,
-    actions: &mut Vec<Action>,
-) -> Option<Event> {
+fn handle_key_release(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
     match state.mode {
-        Mode::Insert => handle_insert_key_release(key, event),
-        Mode::Normal => handle_normal_key_release(state, key, event, actions),
+        Mode::Insert => {}
+        Mode::Normal => handle_normal_key_release(state, key, actions),
     }
 }
 
-// Insert mode stays mostly transparent; Escape is the only mode-specific key.
-fn handle_insert_key_press(
-    state: &mut SharedState,
-    key: Key,
-    event: Event,
-    actions: &mut Vec<Action>,
-) -> Option<Event> {
+fn handle_insert_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
     if key == Key::Escape {
         set_mode(state, Mode::Normal, actions);
-        None
-    } else {
-        Some(event)
     }
 }
 
-fn handle_insert_key_release(key: Key, event: Event) -> Option<Event> {
-    if key == Key::Escape {
-        None
-    } else {
-        Some(event)
-    }
-}
-
-// Normal mode keeps the reserved ViMouse bindings local and forwards everything else.
 fn handle_normal_key_press(
     state: &mut SharedState,
     key: Key,
     is_repeat: bool,
-    event: Event,
     actions: &mut Vec<Action>,
-) -> Option<Event> {
+) {
     if key == Key::Escape {
         set_mode(state, Mode::Normal, actions);
-        return None;
+        return;
     }
 
     if key == Key::KeyI && exact_single_key(&state.pressed_keys, key) && !is_repeat {
         set_mode(state, Mode::Insert, actions);
-        return None;
+        return;
     }
 
     if key == Key::BackQuote && exact_single_key(&state.pressed_keys, key) && !is_repeat {
         cycle_monitor(state);
-        return None;
+        return;
     }
 
     if !is_repeat && exact_single_key(&state.pressed_keys, key) && jump_to_cell(state, key, actions)
     {
-        return None;
+        return;
     }
 
     if let Some(button) = button_from_key(key) {
         if is_valid_button_set(&state.pressed_keys, key) {
             set_button_state(state, button, true, actions);
         }
-        return None;
     }
-
-    if is_reserved_normal_mode_key(key) {
-        return None;
-    }
-
-    Some(event)
 }
 
-fn handle_normal_key_release(
-    state: &mut SharedState,
-    key: Key,
-    event: Event,
-    actions: &mut Vec<Action>,
-) -> Option<Event> {
+fn handle_normal_key_release(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
     if let Some(button) = button_from_key(key) {
         set_button_state(state, button, false, actions);
-        return None;
-    }
-
-    if is_reserved_normal_mode_key(key) {
-        None
-    } else {
-        Some(event)
     }
 }
 
@@ -446,18 +394,6 @@ fn normalized_direction(keys: &HashSet<Key>) -> Option<Point> {
     }
 }
 
-fn is_reserved_normal_mode_key(key: Key) -> bool {
-    key == Key::Escape
-        || key == Key::KeyI
-        || key == Key::BackQuote
-        || jump_cell(key).is_some()
-        || is_movement_key(key)
-        || is_shift_key(key)
-        || is_alt_key(key)
-        || is_control_key(key)
-        || is_button_key(key)
-}
-
 fn speed_multiplier(keys: &HashSet<Key>) -> f64 {
     let mut multiplier = 1.0;
 
@@ -507,10 +443,6 @@ fn is_alt_key(key: Key) -> bool {
 
 fn is_control_key(key: Key) -> bool {
     matches!(key, Key::ControlLeft | Key::ControlRight)
-}
-
-fn is_button_key(key: Key) -> bool {
-    matches!(key, Key::SemiColon | Key::CapsLock)
 }
 
 fn button_from_key(key: Key) -> Option<Button> {
