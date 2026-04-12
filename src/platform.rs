@@ -1,3 +1,5 @@
+// Small platform shims for querying the current cursor location before our event loop starts.
+
 #[cfg(target_os = "linux")]
 pub fn current_cursor_position() -> Option<(f64, f64)> {
     use std::ptr;
@@ -6,6 +8,7 @@ pub fn current_cursor_position() -> Option<(f64, f64)> {
     let xlib = xlib::Xlib::open().ok()?;
 
     unsafe {
+        // Query the root pointer directly so we get virtual-desktop coordinates on X11.
         let display = (xlib.XOpenDisplay)(ptr::null());
         if display.is_null() {
             return None;
@@ -47,6 +50,7 @@ pub fn current_cursor_position() -> Option<(f64, f64)> {
     use core_graphics::event::CGEvent;
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
+    // Core Graphics exposes the current pointer location through a synthetic event.
     let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
     let event = CGEvent::new(source).ok()?;
     let location = event.location();
@@ -59,6 +63,7 @@ pub fn current_cursor_position() -> Option<(f64, f64)> {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     unsafe {
+        // Windows returns the pointer position in virtual-screen coordinates.
         let mut point = POINT { x: 0, y: 0 };
         if GetCursorPos(&mut point) == 0 {
             None

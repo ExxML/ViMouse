@@ -1,7 +1,10 @@
 mod platform;
 
+// `font8x8` gives us a tiny bitmap font for the mode overlay.
 use font8x8::{UnicodeFonts, BASIC_FONTS};
+// `pixels` renders the overlay square into a simple CPU-backed framebuffer.
 use pixels::{Pixels, SurfaceTexture};
+// `rdev` handles global key grabbing and synthetic mouse input.
 use rdev::{grab, simulate, Button, Event, EventType, Key, SimulateError};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -19,6 +22,7 @@ const SLOW_MULTIPLIER: f64 = 0.3;
 const TICK_RATE_HZ: u64 = 120;
 const OVERLAY_SIZE: u32 = 64;
 
+// rdev simulation is global OS state, so serialize synthetic events.
 static SIMULATE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +53,7 @@ struct Point {
     y: f64,
 }
 
+// Monitor bounds are kept in virtual-desktop coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MonitorInfo {
     origin: Point,
@@ -72,6 +77,7 @@ impl MonitorInfo {
     }
 }
 
+// This is the shared runtime state used by the input hook, motion loop, and overlay UI.
 struct SharedState {
     mode: Mode,
     cursor: Point,
@@ -94,6 +100,7 @@ enum Action {
 
 fn main() {
     let event_loop = EventLoop::new();
+    // Start hidden so we can paint the first frame before the OS shows the window.
     let window = WindowBuilder::new()
         .with_title("ViMouse")
         .with_decorations(false)
@@ -104,6 +111,7 @@ fn main() {
         .build(&event_loop)
         .expect("failed to create overlay window");
 
+    // Discover monitors first so cursor jumps and the overlay use the same coordinate space.
     let monitors = collect_monitors(&window);
     let initial_cursor = initial_cursor(&monitors);
     let initial_monitor = monitor_index_for_point(&monitors, initial_cursor).unwrap_or(0);
@@ -123,6 +131,7 @@ fn main() {
     spawn_input_hook(Arc::clone(&shared));
     spawn_motion_loop(Arc::clone(&shared));
 
+    // Paint once before showing the overlay to avoid a blank startup flash.
     let window_size = window.inner_size();
     let surface = SurfaceTexture::new(window_size.width, window_size.height, &window);
     let mut pixels = Pixels::new(OVERLAY_SIZE, OVERLAY_SIZE, surface).expect("pixels init failed");
@@ -134,6 +143,7 @@ fn main() {
     window.set_visible(true);
 
     event_loop.run(move |event, _, control_flow| {
+        // The overlay only changes when the mode or focused monitor changes.
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(33));
 
         match event {
@@ -168,6 +178,7 @@ struct OverlayState {
     monitor: MonitorInfo,
 }
 
+// Snapshot just the overlay-relevant state so the UI code stays simple.
 fn current_overlay(shared: &Arc<Mutex<SharedState>>) -> OverlayState {
     let state = shared.lock().expect("shared state poisoned");
     OverlayState {
@@ -180,6 +191,7 @@ fn current_overlay(shared: &Arc<Mutex<SharedState>>) -> OverlayState {
     }
 }
 
+// Overlay painting is intentionally tiny: move the window, draw the square, present it.
 fn paint_overlay(
     window: &winit::window::Window,
     pixels: &mut Pixels,
@@ -195,6 +207,7 @@ fn spawn_input_hook(shared: Arc<Mutex<SharedState>>) {
         .name("vimouse-hook".into())
         .spawn(move || {
             let hook_shared = Arc::clone(&shared);
+            // `grab` lets us suppress mouse-mode bindings before apps receive them.
             let callback = move |event: Event| handle_input_event(&hook_shared, event);
             if let Err(error) = grab(callback) {
                 eprintln!("global input grab failed: {error:?}");
@@ -207,6 +220,7 @@ fn spawn_motion_loop(shared: Arc<Mutex<SharedState>>) {
     thread::Builder::new()
         .name("vimouse-motion".into())
         .spawn(move || {
+            // Drive movement and scrolling from a fixed-rate loop for smooth output.
             let target_frame = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);
             let mut last_tick = Instant::now();
 
@@ -231,6 +245,7 @@ fn spawn_motion_loop(shared: Arc<Mutex<SharedState>>) {
         .expect("failed to spawn motion loop thread");
 }
 
+// The grab callback is the single entry point for all global keyboard state changes.
 fn handle_input_event(shared: &Arc<Mutex<SharedState>>, event: Event) -> Option<Event> {
     let event_type = event.event_type.clone();
     let mut actions = Vec::new();
@@ -246,6 +261,7 @@ fn handle_input_event(shared: &Arc<Mutex<SharedState>>, event: Event) -> Option<
             }
             EventType::KeyPress(key) => {
                 let is_repeat = !state.pressed_keys.insert(key);
+                // This quit chord is available in both modes so we always have an escape hatch.
                 if !is_repeat && is_quit_chord(&state.pressed_keys) {
                     std::process::exit(0);
                 }
@@ -274,6 +290,7 @@ fn handle_input_event(shared: &Arc<Mutex<SharedState>>, event: Event) -> Option<
     result
 }
 
+// Insert mode is mostly pass-through, except Escape which returns to mouse mode.
 fn handle_insert_mode_press(
     state: &mut SharedState,
     key: Key,
@@ -302,6 +319,7 @@ fn handle_insert_mode_release(
     }
 }
 
+// Normal mode consumes the dedicated mouse bindings and suppresses conflicting chords.
 fn handle_normal_mode_press(
     state: &mut SharedState,
     key: Key,
@@ -329,6 +347,7 @@ fn handle_normal_mode_press(
     if let Some((column, row)) = jump_cell(key) {
         if exact_single_key(&state.pressed_keys, key) && !is_repeat {
             if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
+                // Jump to the center of the chosen 5x3 screen cell.
                 let target = Point {
                     x: monitor.origin.x + ((column as f64) + 0.5) * (monitor.width / 5.0),
                     y: monitor.origin.y + ((row as f64) + 0.5) * (monitor.height / 3.0),
@@ -402,6 +421,7 @@ fn handle_normal_mode_release(
     }
 }
 
+// Let unrelated modifier shortcuts keep working in normal mode when they do not match our chords.
 fn pass_through_or_swallow(state: &mut SharedState, key: Key, event: Event) -> Option<Event> {
     if should_passthrough_in_normal_mode(&state.pressed_keys, key) {
         state.passthrough_keys.insert(key);
@@ -411,6 +431,7 @@ fn pass_through_or_swallow(state: &mut SharedState, key: Key, event: Event) -> O
     }
 }
 
+// Convert the currently held movement keys into smooth cursor or scroll output.
 fn tick_state(state: &mut SharedState, dt: Duration) -> Vec<Action> {
     let mut actions = Vec::new();
 
@@ -423,6 +444,7 @@ fn tick_state(state: &mut SharedState, dt: Duration) -> Vec<Action> {
         let dt_seconds = dt.as_secs_f64();
 
         if is_valid_scroll_set(&state.pressed_keys) {
+            // Keep fractional scroll in the accumulator so small per-frame steps stay smooth.
             state.scroll_remainder.x +=
                 direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * dt_seconds;
             state.scroll_remainder.y +=
@@ -463,6 +485,7 @@ fn tick_state(state: &mut SharedState, dt: Duration) -> Vec<Action> {
     actions
 }
 
+// Mode switches release held buttons so we do not leave the OS in a stuck drag state.
 fn enter_insert_mode(state: &mut SharedState, actions: &mut Vec<Action>) {
     release_mouse_buttons(state, actions);
     state.mode = Mode::Insert;
@@ -491,6 +514,7 @@ fn release_mouse_buttons(state: &mut SharedState, actions: &mut Vec<Action>) {
     }
 }
 
+// Dispatch side effects after releasing the main state lock to avoid re-entrancy issues.
 fn dispatch_actions(actions: &[Action]) {
     for action in actions {
         match action {
@@ -518,11 +542,13 @@ fn dispatch_actions(actions: &[Action]) {
 
 fn simulate_event(event: &EventType) -> Result<(), SimulateError> {
     let _guard = SIMULATE_LOCK.lock().expect("simulate lock poisoned");
+    // A tiny delay helps some platforms keep up with back-to-back synthetic events.
     let result = simulate(event);
     thread::sleep(Duration::from_millis(1));
     result
 }
 
+// Winit gives us monitor geometry in virtual desktop coordinates.
 fn collect_monitors(window: &winit::window::Window) -> Vec<MonitorInfo> {
     let mut monitors: Vec<_> = window
         .available_monitors()
@@ -555,6 +581,7 @@ fn collect_monitors(window: &winit::window::Window) -> Vec<MonitorInfo> {
     monitors
 }
 
+// Fallback geometry keeps the app usable even if monitor enumeration fails.
 fn fallback_monitor() -> MonitorInfo {
     MonitorInfo {
         origin: Point { x: 0.0, y: 0.0 },
@@ -564,6 +591,7 @@ fn fallback_monitor() -> MonitorInfo {
 }
 
 fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
+    // Prefer the real cursor location so startup does not snap unexpectedly.
     if let Some((x, y)) = platform::current_cursor_position() {
         return Point { x, y };
     }
@@ -575,6 +603,7 @@ fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
         .center()
 }
 
+// Keep the overlay anchored to the bottom-right corner of the selected monitor.
 fn position_overlay(window: &winit::window::Window, monitor: &MonitorInfo) {
     let x = (monitor.origin.x as i32) + monitor.width as i32 - OVERLAY_SIZE as i32;
     let y = (monitor.origin.y as i32) + monitor.height as i32 - OVERLAY_SIZE as i32;
@@ -582,6 +611,7 @@ fn position_overlay(window: &winit::window::Window, monitor: &MonitorInfo) {
 }
 
 fn draw_overlay(frame: &mut [u8], mode: Mode) {
+    // Fill the whole square first so there is never an unpainted border.
     let [r, g, b, a] = mode.background();
     for chunk in frame.chunks_exact_mut(4) {
         chunk[0] = r;
@@ -593,6 +623,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
     let glyph = BASIC_FONTS
         .get(mode.label())
         .expect("overlay glyph should exist");
+    // Preserve the original apparent text size while scaling with larger overlays.
     let scale = (((OVERLAY_SIZE as usize) * 3) + 20) / 40;
     let scale = scale.max(1);
     let mut min_col = 8usize;
@@ -620,6 +651,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
 
     let glyph_width = (max_col - min_col + 1) * scale;
     let glyph_height = (max_row - min_row + 1) * scale;
+    // Center the actual painted glyph bounds, not the full 8x8 font cell.
     let offset_x = ((OVERLAY_SIZE as usize) - glyph_width) / 2;
     let offset_y = ((OVERLAY_SIZE as usize) - glyph_height) / 2;
 
@@ -644,6 +676,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
     }
 }
 
+// Normal mode only forwards shortcuts that clearly do not belong to ViMouse.
 fn should_passthrough_in_normal_mode(pressed_keys: &HashSet<Key>, key: Key) -> bool {
     is_meta_key(key)
         || is_control_key(key)
@@ -661,6 +694,7 @@ fn exact_single_key(keys: &HashSet<Key>, expected: Key) -> bool {
     keys.len() == 1 && keys.contains(&expected)
 }
 
+// Quit only when the chord is exactly Ctrl+Shift+Q, with no extra keys mixed in.
 fn is_quit_chord(keys: &HashSet<Key>) -> bool {
     keys.contains(&Key::KeyQ)
         && keys.iter().any(|key| is_control_key(*key))
@@ -670,6 +704,7 @@ fn is_quit_chord(keys: &HashSet<Key>) -> bool {
             .all(|key| *key == Key::KeyQ || is_control_key(*key) || is_shift_key(*key))
 }
 
+// Movement accepts optional speed modifiers and held mouse buttons for dragging.
 fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
     let has_movement = keys.iter().any(|key| is_movement_key(*key));
     if !has_movement {
@@ -685,6 +720,7 @@ fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
     })
 }
 
+// Clicking is allowed alone or while moving so the user can drag with the keyboard.
 fn is_valid_left_button_set(keys: &HashSet<Key>) -> bool {
     keys.iter().all(|key| {
         is_movement_key(*key)
@@ -705,6 +741,7 @@ fn is_valid_right_button_set(keys: &HashSet<Key>) -> bool {
     }) && keys.contains(&Key::CapsLock)
 }
 
+// Scrolling uses Ctrl+H/J/K/L and shares the same speed modifiers as movement.
 fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
     let has_movement = keys.iter().any(|key| is_movement_key(*key));
     let has_control = keys.iter().any(|key| is_control_key(*key));
@@ -717,6 +754,7 @@ fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
     })
 }
 
+// Normalize diagonal movement so holding two directions is not faster than one.
 fn normalized_direction(keys: &HashSet<Key>) -> Option<Point> {
     let mut x: f64 = 0.0;
     let mut y: f64 = 0.0;
@@ -758,6 +796,7 @@ fn speed_multiplier(keys: &HashSet<Key>) -> f64 {
     multiplier
 }
 
+// The quick-jump grid is laid out as a 5x3 matrix over the selected monitor.
 fn jump_cell(key: Key) -> Option<(usize, usize)> {
     match key {
         Key::KeyQ => Some((0, 0)),
@@ -803,6 +842,7 @@ fn is_meta_key(key: Key) -> bool {
     matches!(key, Key::MetaLeft | Key::MetaRight)
 }
 
+// Clamp movement to the union of all monitors so the cursor stays on-screen.
 fn clamp_to_virtual_bounds(point: &mut Point, monitors: &[MonitorInfo]) {
     let min_x = monitors
         .iter()
@@ -825,6 +865,7 @@ fn clamp_to_virtual_bounds(point: &mut Point, monitors: &[MonitorInfo]) {
     point.y = point.y.clamp(min_y, (max_y - 1.0).max(min_y));
 }
 
+// If the cursor is between monitors, pick the nearest one for overlay placement.
 fn monitor_index_for_point(monitors: &[MonitorInfo], point: Point) -> Option<usize> {
     if monitors.is_empty() {
         return None;
