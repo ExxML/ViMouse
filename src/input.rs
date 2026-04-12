@@ -61,7 +61,7 @@ fn handle_input_event(shared: &Shared, event: Event) -> Option<Event> {
     let mut actions = Vec::new();
     let forwarded_event = {
         let mut state = shared.lock().expect("shared state poisoned");
-        match event.event_type.clone() {
+        match event.event_type {
             EventType::MouseMove { x, y } => {
                 update_cursor(&mut state, Point { x, y });
                 Some(event)
