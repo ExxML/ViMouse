@@ -58,184 +58,168 @@ pub fn spawn_motion_loop(shared: Shared) {
 
 // The grab callback is the single entry point for all global keyboard state changes.
 fn handle_input_event(shared: &Shared, event: Event) -> Option<Event> {
-    let event_type = event.event_type.clone();
     let mut actions = Vec::new();
-    let result = {
+    let forwarded_event = {
         let mut state = shared.lock().expect("shared state poisoned");
-        match event_type {
+        match event.event_type.clone() {
             EventType::MouseMove { x, y } => {
-                state.cursor = Point { x, y };
-                if let Some(index) = monitor_index_for_point(&state.monitors, state.cursor) {
-                    state.selected_monitor = index;
-                }
+                update_cursor(&mut state, Point { x, y });
                 Some(event)
             }
-            EventType::KeyPress(key) => {
-                let is_repeat = !state.pressed_keys.insert(key);
-                // This quit chord is available in both modes so we always have an escape hatch.
-                if !is_repeat && is_quit_chord(&state.pressed_keys) {
-                    std::process::exit(0);
-                }
-                if state.mode == Mode::Insert {
-                    handle_insert_mode_press(&mut state, key, is_repeat, &mut actions, event)
-                } else {
-                    handle_normal_mode_press(&mut state, key, is_repeat, &mut actions, event)
-                }
-            }
+            EventType::KeyPress(key) => handle_key_press(&mut state, key, event, &mut actions),
             EventType::KeyRelease(key) => {
                 state.pressed_keys.remove(&key);
-
-                if state.passthrough_keys.remove(&key) {
-                    Some(event)
-                } else if state.mode == Mode::Insert {
-                    handle_insert_mode_release(&mut state, key, &mut actions)
-                } else {
-                    handle_normal_mode_release(&mut state, key, &mut actions)
-                }
+                handle_key_release(&mut state, key, event, &mut actions)
             }
             _ => Some(event),
         }
     };
 
     dispatch_actions(&actions);
-    result
+    forwarded_event
 }
 
-// Insert mode is mostly pass-through, except Escape which returns to mouse mode.
-fn handle_insert_mode_press(
+fn update_cursor(state: &mut SharedState, cursor: Point) {
+    state.cursor = cursor;
+    if let Some(index) = monitor_index_for_point(&state.monitors, cursor) {
+        state.selected_monitor = index;
+    }
+}
+
+fn handle_key_press(
     state: &mut SharedState,
     key: Key,
-    _is_repeat: bool,
-    actions: &mut Vec<Action>,
     event: Event,
+    actions: &mut Vec<Action>,
 ) -> Option<Event> {
-    if key == Key::Escape {
-        enter_normal_mode(state, actions);
-        return None;
+    let is_repeat = !state.pressed_keys.insert(key);
+    if !is_repeat && is_quit_chord(&state.pressed_keys) {
+        std::process::exit(0);
     }
 
-    state.passthrough_keys.insert(key);
-    Some(event)
+    match state.mode {
+        Mode::Insert => handle_insert_key_press(state, key, event, actions),
+        Mode::Normal => handle_normal_key_press(state, key, is_repeat, event, actions),
+    }
 }
 
-fn handle_insert_mode_release(
-    _state: &mut SharedState,
+fn handle_key_release(
+    state: &mut SharedState,
     key: Key,
-    _actions: &mut Vec<Action>,
+    event: Event,
+    actions: &mut Vec<Action>,
 ) -> Option<Event> {
+    match state.mode {
+        Mode::Insert => handle_insert_key_release(key, event),
+        Mode::Normal => handle_normal_key_release(state, key, event, actions),
+    }
+}
+
+// Insert mode stays mostly transparent; Escape is the only mode-specific key.
+fn handle_insert_key_press(
+    state: &mut SharedState,
+    key: Key,
+    event: Event,
+    actions: &mut Vec<Action>,
+) -> Option<Event> {
+    if key == Key::Escape {
+        set_mode(state, Mode::Normal, actions);
+        None
+    } else {
+        Some(event)
+    }
+}
+
+fn handle_insert_key_release(key: Key, event: Event) -> Option<Event> {
     if key == Key::Escape {
         None
     } else {
-        None
+        Some(event)
     }
 }
 
-// Normal mode consumes the dedicated mouse bindings and suppresses conflicting chords.
-fn handle_normal_mode_press(
+// Normal mode keeps the reserved ViMouse bindings local and forwards everything else.
+fn handle_normal_key_press(
     state: &mut SharedState,
     key: Key,
     is_repeat: bool,
-    actions: &mut Vec<Action>,
     event: Event,
+    actions: &mut Vec<Action>,
 ) -> Option<Event> {
     if key == Key::Escape {
-        enter_normal_mode(state, actions);
+        set_mode(state, Mode::Normal, actions);
         return None;
     }
 
     if key == Key::KeyI && exact_single_key(&state.pressed_keys, key) && !is_repeat {
-        enter_insert_mode(state, actions);
+        set_mode(state, Mode::Insert, actions);
         return None;
     }
 
     if key == Key::BackQuote && exact_single_key(&state.pressed_keys, key) && !is_repeat {
-        if !state.monitors.is_empty() {
-            state.selected_monitor = (state.selected_monitor + 1) % state.monitors.len();
-        }
+        cycle_monitor(state);
         return None;
     }
 
-    if let Some((column, row)) = jump_cell(key) {
-        if exact_single_key(&state.pressed_keys, key) && !is_repeat {
-            if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
-                // Jump to the center of the chosen 5x3 screen cell.
-                let target = Point {
-                    x: monitor.origin.x + ((column as f64) + 0.5) * (monitor.width / 5.0),
-                    y: monitor.origin.y + ((row as f64) + 0.5) * (monitor.height / 3.0),
-                };
-                state.cursor = target;
-                actions.push(Action::MouseMove(target));
-            }
-            return None;
-        }
-
-        return pass_through_or_swallow(state, key, event);
-    }
-
-    if key == Key::SemiColon {
-        if !state.left_button_down && is_valid_left_button_set(&state.pressed_keys) {
-            state.left_button_down = true;
-            actions.push(Action::ButtonPress(Button::Left));
-        }
-        return None;
-    }
-
-    if key == Key::CapsLock {
-        if !state.right_button_down && is_valid_right_button_set(&state.pressed_keys) {
-            state.right_button_down = true;
-            actions.push(Action::ButtonPress(Button::Right));
-        }
-        return None;
-    }
-
-    if is_movement_key(key)
-        || is_shift_key(key)
-        || is_alt_key(key)
-        || is_control_key(key)
-        || is_button_key(key)
+    if !is_repeat && exact_single_key(&state.pressed_keys, key) && jump_to_cell(state, key, actions)
     {
-        if is_valid_scroll_set(&state.pressed_keys) || is_valid_move_set(&state.pressed_keys) {
-            return None;
-        }
-
-        return pass_through_or_swallow(state, key, event);
+        return None;
     }
 
-    pass_through_or_swallow(state, key, event)
+    if let Some(button) = button_from_key(key) {
+        if is_valid_button_set(&state.pressed_keys, key) {
+            set_button_state(state, button, true, actions);
+        }
+        return None;
+    }
+
+    if is_reserved_normal_mode_key(key) {
+        return None;
+    }
+
+    Some(event)
 }
 
-fn handle_normal_mode_release(
+fn handle_normal_key_release(
     state: &mut SharedState,
     key: Key,
+    event: Event,
     actions: &mut Vec<Action>,
 ) -> Option<Event> {
-    match key {
-        Key::SemiColon => {
-            if state.left_button_down {
-                state.left_button_down = false;
-                actions.push(Action::ButtonRelease(Button::Left));
-            }
-            None
-        }
-        Key::CapsLock => {
-            if state.right_button_down {
-                state.right_button_down = false;
-                actions.push(Action::ButtonRelease(Button::Right));
-            }
-            None
-        }
-        _ => None,
+    if let Some(button) = button_from_key(key) {
+        set_button_state(state, button, false, actions);
+        return None;
+    }
+
+    if is_reserved_normal_mode_key(key) {
+        None
+    } else {
+        Some(event)
     }
 }
 
-// Let unrelated modifier shortcuts keep working in normal mode when they do not match our chords.
-fn pass_through_or_swallow(state: &mut SharedState, key: Key, event: Event) -> Option<Event> {
-    if should_passthrough_in_normal_mode(&state.pressed_keys, key) {
-        state.passthrough_keys.insert(key);
-        Some(event)
-    } else {
-        None
+fn cycle_monitor(state: &mut SharedState) {
+    if !state.monitors.is_empty() {
+        state.selected_monitor = (state.selected_monitor + 1) % state.monitors.len();
     }
+}
+
+fn jump_to_cell(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) -> bool {
+    let Some((column, row)) = jump_cell(key) else {
+        return false;
+    };
+    let Some(monitor) = state.monitors.get(state.selected_monitor).copied() else {
+        return true;
+    };
+
+    // Jump to the center of the chosen 5x3 screen cell.
+    let target = Point {
+        x: monitor.origin.x + ((column as f64) + 0.5) * (monitor.width / 5.0),
+        y: monitor.origin.y + ((row as f64) + 0.5) * (monitor.height / 3.0),
+    };
+    update_cursor(state, target);
+    actions.push(Action::MouseMove(target));
+    true
 }
 
 // Convert the currently held movement keys into smooth cursor or scroll output.
@@ -246,45 +230,18 @@ fn tick_state(state: &mut SharedState, dt: Duration) -> Vec<Action> {
         return actions;
     }
 
-    if let Some(direction) = normalized_direction(&state.pressed_keys) {
-        let speed_multiplier = speed_multiplier(&state.pressed_keys);
-        let dt_seconds = dt.as_secs_f64();
+    let Some(direction) = normalized_direction(&state.pressed_keys) else {
+        state.scroll_remainder = Point::default();
+        return actions;
+    };
 
-        if is_valid_scroll_set(&state.pressed_keys) {
-            // Keep fractional scroll in the accumulator so small per-frame steps stay smooth.
-            state.scroll_remainder.x +=
-                direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * dt_seconds;
-            state.scroll_remainder.y +=
-                -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * dt_seconds;
+    let speed_multiplier = speed_multiplier(&state.pressed_keys);
+    let dt_seconds = dt.as_secs_f64();
 
-            let whole_x = state.scroll_remainder.x.trunc() as i64;
-            let whole_y = state.scroll_remainder.y.trunc() as i64;
-
-            state.scroll_remainder.x -= whole_x as f64;
-            state.scroll_remainder.y -= whole_y as f64;
-
-            if whole_x != 0 || whole_y != 0 {
-                actions.push(Action::Scroll {
-                    delta_x: whole_x,
-                    delta_y: whole_y,
-                });
-            }
-        } else if is_valid_move_set(&state.pressed_keys) {
-            state.scroll_remainder = Point::default();
-            let step = MOVE_SPEED_PX_PER_SEC * speed_multiplier * dt_seconds;
-            let mut target = Point {
-                x: state.cursor.x + direction.x * step,
-                y: state.cursor.y + direction.y * step,
-            };
-            clamp_to_virtual_bounds(&mut target, &state.monitors);
-            state.cursor = target;
-
-            if let Some(index) = monitor_index_for_point(&state.monitors, target) {
-                state.selected_monitor = index;
-            }
-
-            actions.push(Action::MouseMove(target));
-        }
+    if is_valid_scroll_set(&state.pressed_keys) {
+        tick_scroll(state, direction, speed_multiplier, dt_seconds, &mut actions);
+    } else if is_valid_move_set(&state.pressed_keys) {
+        tick_move(state, direction, speed_multiplier, dt_seconds, &mut actions);
     } else {
         state.scroll_remainder = Point::default();
     }
@@ -292,33 +249,86 @@ fn tick_state(state: &mut SharedState, dt: Duration) -> Vec<Action> {
     actions
 }
 
-// Mode switches release held buttons so we do not leave the OS in a stuck drag state.
-fn enter_insert_mode(state: &mut SharedState, actions: &mut Vec<Action>) {
-    release_mouse_buttons(state, actions);
-    state.mode = Mode::Insert;
-    state.pressed_keys.clear();
-    state.passthrough_keys.clear();
-    state.scroll_remainder = Point::default();
+fn tick_scroll(
+    state: &mut SharedState,
+    direction: Point,
+    speed_multiplier: f64,
+    dt_seconds: f64,
+    actions: &mut Vec<Action>,
+) {
+    // Keep fractional scroll in the accumulator so small per-frame steps stay smooth.
+    state.scroll_remainder.x +=
+        direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * dt_seconds;
+    state.scroll_remainder.y +=
+        -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * dt_seconds;
+
+    let whole_x = state.scroll_remainder.x.trunc() as i64;
+    let whole_y = state.scroll_remainder.y.trunc() as i64;
+
+    state.scroll_remainder.x -= whole_x as f64;
+    state.scroll_remainder.y -= whole_y as f64;
+
+    if whole_x != 0 || whole_y != 0 {
+        actions.push(Action::Scroll {
+            delta_x: whole_x,
+            delta_y: whole_y,
+        });
+    }
 }
 
-fn enter_normal_mode(state: &mut SharedState, actions: &mut Vec<Action>) {
+fn tick_move(
+    state: &mut SharedState,
+    direction: Point,
+    speed_multiplier: f64,
+    dt_seconds: f64,
+    actions: &mut Vec<Action>,
+) {
+    state.scroll_remainder = Point::default();
+    let step = MOVE_SPEED_PX_PER_SEC * speed_multiplier * dt_seconds;
+    let mut target = Point {
+        x: state.cursor.x + direction.x * step,
+        y: state.cursor.y + direction.y * step,
+    };
+    clamp_to_virtual_bounds(&mut target, &state.monitors);
+    update_cursor(state, target);
+    actions.push(Action::MouseMove(target));
+}
+
+// Mode switches release held buttons so we do not leave the OS in a stuck drag state.
+fn set_mode(state: &mut SharedState, mode: Mode, actions: &mut Vec<Action>) {
     release_mouse_buttons(state, actions);
-    state.mode = Mode::Normal;
+    state.mode = mode;
     state.pressed_keys.clear();
-    state.passthrough_keys.clear();
     state.scroll_remainder = Point::default();
 }
 
 fn release_mouse_buttons(state: &mut SharedState, actions: &mut Vec<Action>) {
-    if state.left_button_down {
-        state.left_button_down = false;
-        actions.push(Action::ButtonRelease(Button::Left));
+    set_button_state(state, Button::Left, false, actions);
+    set_button_state(state, Button::Right, false, actions);
+}
+
+fn set_button_state(
+    state: &mut SharedState,
+    button: Button,
+    is_down: bool,
+    actions: &mut Vec<Action>,
+) {
+    let button_state = match button {
+        Button::Left => &mut state.left_button_down,
+        Button::Right => &mut state.right_button_down,
+        _ => return,
+    };
+
+    if *button_state == is_down {
+        return;
     }
 
-    if state.right_button_down {
-        state.right_button_down = false;
-        actions.push(Action::ButtonRelease(Button::Right));
-    }
+    *button_state = is_down;
+    actions.push(if is_down {
+        Action::ButtonPress(button)
+    } else {
+        Action::ButtonRelease(button)
+    });
 }
 
 // Dispatch side effects after releasing the main state lock to avoid re-entrancy issues.
@@ -355,20 +365,6 @@ fn simulate_event(event: &EventType) -> Result<(), SimulateError> {
     result
 }
 
-// Normal mode only forwards shortcuts that clearly do not belong to ViMouse.
-fn should_passthrough_in_normal_mode(pressed_keys: &HashSet<Key>, key: Key) -> bool {
-    is_meta_key(key)
-        || is_control_key(key)
-        || (pressed_keys
-            .iter()
-            .any(|pressed| is_meta_key(*pressed) || is_alt_key(*pressed))
-            && !is_valid_move_set(pressed_keys)
-            && !is_valid_scroll_set(pressed_keys))
-        || (pressed_keys.iter().any(|pressed| is_control_key(*pressed))
-            && !is_valid_scroll_set(pressed_keys)
-            && !is_valid_move_set(pressed_keys))
-}
-
 fn exact_single_key(keys: &HashSet<Key>, expected: Key) -> bool {
     keys.len() == 1 && keys.contains(&expected)
 }
@@ -383,7 +379,7 @@ fn is_quit_chord(keys: &HashSet<Key>) -> bool {
             .all(|key| *key == Key::KeyQ || is_control_key(*key) || is_shift_key(*key))
 }
 
-// Movement accepts optional speed modifiers and held mouse buttons for dragging.
+// Movement accepts Ctrl (fast) or Alt (slow) speed modifiers and held mouse buttons for dragging.
 fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
     let has_movement = keys.iter().any(|key| is_movement_key(*key));
     if !has_movement {
@@ -392,7 +388,7 @@ fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
 
     keys.iter().all(|key| {
         is_movement_key(*key)
-            || is_shift_key(*key)
+            || is_control_key(*key)
             || is_alt_key(*key)
             || *key == Key::SemiColon
             || *key == Key::CapsLock
@@ -400,37 +396,25 @@ fn is_valid_move_set(keys: &HashSet<Key>) -> bool {
 }
 
 // Clicking is allowed alone or while moving so the user can drag with the keyboard.
-fn is_valid_left_button_set(keys: &HashSet<Key>) -> bool {
+fn is_valid_button_set(keys: &HashSet<Key>, button_key: Key) -> bool {
     keys.iter().all(|key| {
         is_movement_key(*key)
-            || is_shift_key(*key)
+            || is_control_key(*key)
             || is_alt_key(*key)
             || *key == Key::SemiColon
             || *key == Key::CapsLock
-    }) && keys.contains(&Key::SemiColon)
+    }) && keys.contains(&button_key)
 }
 
-fn is_valid_right_button_set(keys: &HashSet<Key>) -> bool {
-    keys.iter().all(|key| {
-        is_movement_key(*key)
-            || is_shift_key(*key)
-            || is_alt_key(*key)
-            || *key == Key::SemiColon
-            || *key == Key::CapsLock
-    }) && keys.contains(&Key::CapsLock)
-}
-
-// Scrolling uses Ctrl+H/J/K/L and shares the same speed modifiers as movement.
+// Scrolling uses Shift+H/J/K/L.
 fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
     let has_movement = keys.iter().any(|key| is_movement_key(*key));
-    let has_control = keys.iter().any(|key| is_control_key(*key));
-    if !has_movement || !has_control {
+    let has_shift = keys.iter().any(|key| is_shift_key(*key));
+    if !has_movement || !has_shift {
         return false;
     }
 
-    keys.iter().all(|key| {
-        is_movement_key(*key) || is_shift_key(*key) || is_alt_key(*key) || is_control_key(*key)
-    })
+    keys.iter().all(|key| is_movement_key(*key) || is_shift_key(*key))
 }
 
 // Normalize diagonal movement so holding two directions is not faster than one.
@@ -462,10 +446,22 @@ fn normalized_direction(keys: &HashSet<Key>) -> Option<Point> {
     }
 }
 
+fn is_reserved_normal_mode_key(key: Key) -> bool {
+    key == Key::Escape
+        || key == Key::KeyI
+        || key == Key::BackQuote
+        || jump_cell(key).is_some()
+        || is_movement_key(key)
+        || is_shift_key(key)
+        || is_alt_key(key)
+        || is_control_key(key)
+        || is_button_key(key)
+}
+
 fn speed_multiplier(keys: &HashSet<Key>) -> f64 {
     let mut multiplier = 1.0;
 
-    if keys.iter().any(|key| is_shift_key(*key)) {
+    if keys.iter().any(|key| is_control_key(*key)) {
         multiplier *= FAST_MULTIPLIER;
     }
     if keys.iter().any(|key| is_alt_key(*key)) {
@@ -517,6 +513,10 @@ fn is_button_key(key: Key) -> bool {
     matches!(key, Key::SemiColon | Key::CapsLock)
 }
 
-fn is_meta_key(key: Key) -> bool {
-    matches!(key, Key::MetaLeft | Key::MetaRight)
+fn button_from_key(key: Key) -> Option<Button> {
+    match key {
+        Key::SemiColon => Some(Button::Left),
+        Key::CapsLock => Some(Button::Right),
+        _ => None,
+    }
 }
