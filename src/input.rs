@@ -4,23 +4,47 @@ use crate::config::{
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
-use rdev::{listen, simulate, Button, Event, EventType, Key, SimulateError};
+use rdev::{grab, simulate, Button, Event, EventType, Key, SimulateError};
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 // rdev simulation is global OS state, so serialize synthetic events.
 static SIMULATE_LOCK: Mutex<()> = Mutex::new(());
 
+#[derive(Clone, Copy, Debug)]
+struct DeferredModifier {
+    key: Key,
+    used_by_suppressed_combo: bool,
+}
+
+#[derive(Debug, Default)]
+struct HookState {
+    deferred_modifiers: Vec<DeferredModifier>,
+    suppressed_keys: HashSet<Key>,
+    #[cfg(target_os = "windows")]
+    synthetic_passthrough: Vec<EventType>,
+}
+
+#[derive(Debug, Default)]
+struct InputOutcome {
+    actions: Vec<Action>,
+    passthrough_events: Vec<EventType>,
+    suppress_event: bool,
+}
+
 pub fn spawn_input_hook(shared: Shared) {
     thread::Builder::new()
         .name("vimouse-hook".into())
         .spawn(move || {
+            let hook_state = Arc::new(Mutex::new(HookState::default()));
             let hook_shared = shared.clone();
-            let callback = move |event: Event| handle_input_event(&hook_shared, event);
-            if let Err(error) = listen(callback) {
-                eprintln!("global input listen failed: {error:?}");
+            let hook_runtime = Arc::clone(&hook_state);
+            let callback =
+                move |event: Event| handle_input_event(&hook_shared, &hook_runtime, event);
+            if let Err(error) = grab(callback) {
+                eprintln!("global input grab failed: {error:?}");
             }
         })
         .expect("failed to spawn input hook thread");
@@ -55,24 +79,55 @@ pub fn spawn_motion_loop(shared: Shared) {
         .expect("failed to spawn motion loop thread");
 }
 
-fn handle_input_event(shared: &Shared, event: Event) {
-    let mut actions = Vec::new();
+fn handle_input_event(
+    shared: &Shared,
+    hook_state: &Arc<Mutex<HookState>>,
+    event: Event,
+) -> Option<Event> {
     {
-        let mut state = shared.lock().expect("shared state poisoned");
-        match event.event_type {
-            EventType::MouseMove { x, y } => {
-                update_cursor(&mut state, Point { x, y });
-            }
-            EventType::KeyPress(key) => handle_key_press(&mut state, key, &mut actions),
-            EventType::KeyRelease(key) => {
-                state.pressed_keys.remove(&key);
-                handle_key_release(&mut state, key, &mut actions);
-            }
-            _ => {}
+        let mut hook = hook_state.lock().expect("hook state poisoned");
+        if consume_synthetic_passthrough(&mut hook, event.event_type) {
+            return Some(event);
         }
     }
 
-    dispatch_actions(&actions);
+    let outcome = {
+        let mut state = shared.lock().expect("shared state poisoned");
+        let mut hook = hook_state.lock().expect("hook state poisoned");
+        process_input_event(&mut state, &mut hook, event.event_type)
+    };
+
+    dispatch_actions(&outcome.actions);
+    dispatch_passthrough_events(hook_state, &outcome.passthrough_events);
+
+    if outcome.suppress_event {
+        None
+    } else {
+        Some(event)
+    }
+}
+
+fn process_input_event(
+    state: &mut SharedState,
+    hook_state: &mut HookState,
+    event_type: EventType,
+) -> InputOutcome {
+    let mut outcome = InputOutcome::default();
+
+    match event_type {
+        EventType::MouseMove { x, y } => {
+            update_cursor(state, Point { x, y });
+        }
+        EventType::KeyPress(key) => {
+            outcome.suppress_event = handle_key_press(state, hook_state, key, &mut outcome);
+        }
+        EventType::KeyRelease(key) => {
+            outcome.suppress_event = handle_key_release(state, hook_state, key, &mut outcome);
+        }
+        _ => {}
+    }
+
+    outcome
 }
 
 fn update_cursor(state: &mut SharedState, cursor: Point) {
@@ -82,23 +137,54 @@ fn update_cursor(state: &mut SharedState, cursor: Point) {
     }
 }
 
-fn handle_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
+fn handle_key_press(
+    state: &mut SharedState,
+    hook_state: &mut HookState,
+    key: Key,
+    outcome: &mut InputOutcome,
+) -> bool {
     let is_repeat = !state.pressed_keys.insert(key);
     if !is_repeat && is_quit_chord(&state.pressed_keys) {
         std::process::exit(0);
     }
 
     match state.mode {
-        Mode::Insert => handle_insert_key_press(state, key, actions),
-        Mode::Normal => handle_normal_key_press(state, key, is_repeat, actions),
+        Mode::Insert => {
+            handle_insert_key_press(state, key, &mut outcome.actions);
+            false
+        }
+        Mode::Normal => handle_normal_key_press(state, hook_state, key, is_repeat, outcome),
     }
 }
 
-fn handle_key_release(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
-    match state.mode {
-        Mode::Insert => {}
-        Mode::Normal => handle_normal_key_release(state, key, actions),
+fn handle_key_release(
+    state: &mut SharedState,
+    hook_state: &mut HookState,
+    key: Key,
+    outcome: &mut InputOutcome,
+) -> bool {
+    state.pressed_keys.remove(&key);
+
+    if hook_state.suppressed_keys.remove(&key) {
+        if state.mode == Mode::Normal {
+            handle_normal_key_release(state, key, &mut outcome.actions);
+        }
+        return true;
     }
+
+    if state.mode == Mode::Normal {
+        handle_normal_key_release(state, key, &mut outcome.actions);
+    }
+
+    if let Some(deferred) = take_deferred_modifier(hook_state, key) {
+        if deferred.used_by_suppressed_combo {
+            return true;
+        }
+
+        outcome.passthrough_events.push(EventType::KeyPress(key));
+    }
+
+    false
 }
 
 fn handle_insert_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
@@ -109,35 +195,60 @@ fn handle_insert_key_press(state: &mut SharedState, key: Key, actions: &mut Vec<
 
 fn handle_normal_key_press(
     state: &mut SharedState,
+    hook_state: &mut HookState,
     key: Key,
     is_repeat: bool,
-    actions: &mut Vec<Action>,
-) {
+    outcome: &mut InputOutcome,
+) -> bool {
+    if is_modifier_key(key) {
+        if !is_repeat && !has_deferred_modifier(hook_state, key) {
+            hook_state.deferred_modifiers.push(DeferredModifier {
+                key,
+                used_by_suppressed_combo: false,
+            });
+        }
+        return true;
+    }
+
+    let suppress_event = should_suppress_normal_key_press(&state.pressed_keys, key);
+    if suppress_event {
+        mark_deferred_modifiers_used_by_suppressed_combo(hook_state);
+        if !is_repeat {
+            hook_state.suppressed_keys.insert(key);
+        }
+    } else {
+        flush_deferred_modifiers(hook_state, &mut outcome.passthrough_events);
+    }
+
     if key == Key::Escape {
-        set_mode(state, Mode::Normal, actions);
-        return;
+        set_mode(state, Mode::Normal, &mut outcome.actions);
+        return suppress_event;
     }
 
     if key == Key::KeyI && exact_single_key(&state.pressed_keys, key) && !is_repeat {
-        set_mode(state, Mode::Insert, actions);
-        return;
+        set_mode(state, Mode::Insert, &mut outcome.actions);
+        return suppress_event;
     }
 
     if key == Key::BackQuote && exact_single_key(&state.pressed_keys, key) && !is_repeat {
         cycle_monitor(state);
-        return;
+        return suppress_event;
     }
 
-    if !is_repeat && exact_single_key(&state.pressed_keys, key) && jump_to_cell(state, key, actions)
+    if !is_repeat
+        && exact_single_key(&state.pressed_keys, key)
+        && jump_to_cell(state, key, &mut outcome.actions)
     {
-        return;
+        return suppress_event;
     }
 
     if let Some(button) = button_from_key(key) {
         if is_valid_button_set(&state.pressed_keys, key) {
-            set_button_state(state, button, true, actions);
+            set_button_state(state, button, true, &mut outcome.actions);
         }
     }
+
+    suppress_event
 }
 
 fn handle_normal_key_release(state: &mut SharedState, key: Key, actions: &mut Vec<Action>) {
@@ -313,8 +424,68 @@ fn simulate_event(event: &EventType) -> Result<(), SimulateError> {
     result
 }
 
+fn dispatch_passthrough_events(hook_state: &Arc<Mutex<HookState>>, events: &[EventType]) {
+    for event in events {
+        {
+            let mut hook = hook_state.lock().expect("hook state poisoned");
+            record_synthetic_passthrough(&mut hook, *event);
+        }
+        let _ = simulate_event(event);
+    }
+}
+
 fn exact_single_key(keys: &HashSet<Key>, expected: Key) -> bool {
     keys.len() == 1 && keys.contains(&expected)
+}
+
+fn has_deferred_modifier(hook_state: &HookState, key: Key) -> bool {
+    hook_state
+        .deferred_modifiers
+        .iter()
+        .any(|modifier| modifier.key == key)
+}
+
+fn take_deferred_modifier(hook_state: &mut HookState, key: Key) -> Option<DeferredModifier> {
+    let index = hook_state
+        .deferred_modifiers
+        .iter()
+        .position(|modifier| modifier.key == key)?;
+    Some(hook_state.deferred_modifiers.remove(index))
+}
+
+fn mark_deferred_modifiers_used_by_suppressed_combo(hook_state: &mut HookState) {
+    for modifier in &mut hook_state.deferred_modifiers {
+        modifier.used_by_suppressed_combo = true;
+    }
+}
+
+fn flush_deferred_modifiers(hook_state: &mut HookState, passthrough_events: &mut Vec<EventType>) {
+    for modifier in hook_state.deferred_modifiers.drain(..) {
+        passthrough_events.push(EventType::KeyPress(modifier.key));
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn record_synthetic_passthrough(hook_state: &mut HookState, event_type: EventType) {
+    hook_state.synthetic_passthrough.push(event_type);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn record_synthetic_passthrough(_hook_state: &mut HookState, _event_type: EventType) {}
+
+#[cfg(target_os = "windows")]
+fn consume_synthetic_passthrough(hook_state: &mut HookState, event_type: EventType) -> bool {
+    if hook_state.synthetic_passthrough.first() == Some(&event_type) {
+        hook_state.synthetic_passthrough.remove(0);
+        return true;
+    }
+
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+fn consume_synthetic_passthrough(_hook_state: &mut HookState, _event_type: EventType) -> bool {
+    false
 }
 
 // Quit only when the chord is exactly Ctrl+Shift+Q, with no extra keys mixed in.
@@ -325,6 +496,20 @@ fn is_quit_chord(keys: &HashSet<Key>) -> bool {
         && keys
             .iter()
             .all(|key| *key == Key::KeyQ || is_control_key(*key) || is_shift_key(*key))
+}
+
+fn should_suppress_normal_key_press(keys: &HashSet<Key>, key: Key) -> bool {
+    is_reserved_normal_combo_key(key)
+        || (is_single_key_binding(key) && exact_single_key(keys, key))
+        || is_quit_chord(keys)
+}
+
+fn is_reserved_normal_combo_key(key: Key) -> bool {
+    is_movement_key(key) || button_from_key(key).is_some()
+}
+
+fn is_single_key_binding(key: Key) -> bool {
+    key == Key::Escape || key == Key::KeyI || key == Key::BackQuote || jump_cell(key).is_some()
 }
 
 // Movement accepts Ctrl (fast) or Alt (slow) speed modifiers and held mouse buttons for dragging.
@@ -362,7 +547,8 @@ fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
         return false;
     }
 
-    keys.iter().all(|key| is_movement_key(*key) || is_shift_key(*key))
+    keys.iter()
+        .all(|key| is_movement_key(*key) || is_shift_key(*key))
 }
 
 // Normalize diagonal movement so holding two directions is not faster than one.
@@ -443,6 +629,14 @@ fn is_alt_key(key: Key) -> bool {
 
 fn is_control_key(key: Key) -> bool {
     matches!(key, Key::ControlLeft | Key::ControlRight)
+}
+
+fn is_meta_key(key: Key) -> bool {
+    matches!(key, Key::MetaLeft | Key::MetaRight)
+}
+
+fn is_modifier_key(key: Key) -> bool {
+    is_shift_key(key) || is_control_key(key) || is_alt_key(key) || is_meta_key(key)
 }
 
 fn button_from_key(key: Key) -> Option<Button> {
