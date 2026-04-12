@@ -1,5 +1,5 @@
 use crate::config::{
-    FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
+     FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
     KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
     KEY_NORMAL_MODE, KEY_QUIT, KEY_RIGHT_CLICK, MOVE_SPEED_PX_PER_SEC,
     SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
@@ -540,8 +540,7 @@ fn is_valid_button_set(keys: &HashSet<Key>, button_key: Key) -> bool {
             || *key == KEY_RIGHT_CLICK
     }) && keys.contains(&button_key)
 }
-
-// Scrolling uses Shift+H/J/K/L.
+/// Scrolling uses Shift+H/J/K/L. Ctrl (fast) and Alt (slow) modify scroll speed.
 fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
     let has_movement = keys.iter().any(|key| is_movement_key(*key));
     let has_shift = keys.iter().any(|key| is_shift_key(*key));
@@ -550,7 +549,8 @@ fn is_valid_scroll_set(keys: &HashSet<Key>) -> bool {
     }
 
     keys.iter()
-        .all(|key| is_movement_key(*key) || is_shift_key(*key))
+        .all(|key| is_movement_key(*key) || is_shift_key(*key) || is_control_key(*key) || is_alt_key(*key))
+
 }
 
 // Normalize diagonal movement so holding two directions is not faster than one.
