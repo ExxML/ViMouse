@@ -25,6 +25,15 @@ pub const KEY_NORMAL_MODE: Key = Key::Escape;
 // Monitor cycling
 pub const KEY_CYCLE_MONITOR: Key = Key::BackQuote;
 
+// Quit chord
+pub const KEY_QUIT: Key = Key::KeyQ;
+pub const KEYS_QUIT_MODIFIERS: &[Key] = &[
+    Key::ControlLeft,
+    Key::ControlRight,
+    Key::ShiftLeft,
+    Key::ShiftRight,
+];
+
 // Speed modifier keys
 pub const KEYS_FAST: &[Key] = &[Key::ControlLeft, Key::ControlRight];
 pub const KEYS_SLOW: &[Key] = &[Key::Alt, Key::AltGr];

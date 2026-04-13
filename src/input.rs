@@ -1,8 +1,8 @@
 use crate::config::{
-    FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
-    KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
-    KEY_NORMAL_MODE, KEY_RIGHT_CLICK, MOVE_SPEED_PX_PER_SEC, SCROLL_SPEED_UNITS_PER_SEC,
-    SLOW_MULTIPLIER, TICK_RATE_HZ,
+    FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_QUIT_MODIFIERS, KEYS_SCROLL, KEYS_SLOW,
+    KEY_CYCLE_MONITOR, KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT,
+    KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_QUIT, KEY_RIGHT_CLICK, MOVE_SPEED_PX_PER_SEC,
+    SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
@@ -42,6 +42,8 @@ pub fn spawn_motion_loop(shared: Shared) {
             let mut next_tick = last_tick + frame_time;
 
             loop {
+                // Drive movement from elapsed time instead of key-repeat cadence so hold-to-move
+                // feels consistent on different keyboards and refresh rates.
                 let now = Instant::now();
                 let delta_seconds = now
                     .saturating_duration_since(last_tick)
@@ -107,6 +109,12 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
+            // Identify quit chord instead of a jump-grid Q press.
+            if quit_chord_active(&tracker.held_keys, key) {
+                std::process::exit(0);
+            }
+
+            // If a non-ViMouse key started the chord, let the rest of that chord pass through.
             if has_uncaptured_non_modifier(&tracker, key) {
                 false
             } else if is_move_key(key) {
@@ -275,6 +283,8 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
 
 fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     let mut state = shared.lock().expect("shared state poisoned");
+    // The hook thread only mutates state; all synthetic mouse output is emitted here so
+    // cursor movement, clicks, and scrolling stay serialized and predictable.
     let mut actions = Vec::with_capacity(state.pending_actions.len() + 2);
     actions.append(&mut state.pending_actions);
 
@@ -291,6 +301,7 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
 
     let speed_multiplier = movement_multiplier(&state.pressed_keys);
     if scroll_mode_active(&state.pressed_keys) {
+        // Keep fractional scroll remainder so slower motion still feels steady.
         state.scroll_remainder.x +=
             direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
         state.scroll_remainder.y +=
@@ -396,6 +407,15 @@ fn contains_any(keys: &HashSet<Key>, candidates: &[Key]) -> bool {
     candidates.iter().any(|candidate| keys.contains(candidate))
 }
 
+fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
+    current_key == KEY_QUIT
+        && contains_any(held_keys, &[Key::ControlLeft, Key::ControlRight])
+        && contains_any(held_keys, &[Key::ShiftLeft, Key::ShiftRight])
+        && held_keys
+            .iter()
+            .all(|key| *key == KEY_QUIT || KEYS_QUIT_MODIFIERS.contains(key))
+}
+
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
     !keys.iter().any(|key| is_modifier_key(*key))
 }
@@ -426,9 +446,7 @@ fn is_modifier_key(key: Key) -> bool {
 }
 
 fn is_runtime_modifier(key: Key) -> bool {
-    KEYS_SCROLL.contains(&key)
-        || KEYS_FAST.contains(&key)
-        || KEYS_SLOW.contains(&key)
+    KEYS_SCROLL.contains(&key) || KEYS_FAST.contains(&key) || KEYS_SLOW.contains(&key)
 }
 
 struct InputEmitter {
