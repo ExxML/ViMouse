@@ -6,13 +6,276 @@ use crate::config::{
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
-use rdev::{grab, simulate, Button, Event, EventType, Key};
+#[cfg(not(target_os = "macos"))]
+use rdev::grab;
+use rdev::{simulate, Button, Event, EventType, Key};
 use std::collections::HashSet;
 use std::thread;
 use std::time::{Duration, Instant};
 
 const MOVE_KEYS: [Key; 4] = [KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE_RIGHT];
 static SIMULATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+// macOS event suppression and simulation works differently than Windows or Linux
+// therefore, we use a custom event tap on macOS instead of rdev's built-in grab/simulate functionality
+// otherwise a "Trace/BPT trap: 5" error is thrown when emitting synthetic key events
+#[cfg(target_os = "macos")]
+mod macos_grab {
+    use core_graphics::event::{CGEventTapProxy, CGEventType};
+    use rdev::{Button, Event, EventType, Key};
+    use std::os::raw::c_void;
+    use std::time::SystemTime;
+
+    type GrabCallback = Box<dyn FnMut(Event) -> Option<Event> + Send>;
+
+    static mut CALLBACK: Option<GrabCallback> = None;
+    static mut TAP_REF: *mut c_void = std::ptr::null_mut();
+    static mut LAST_FLAGS: u64 = 0;
+
+    extern "C" {
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            events: u64,
+            callback: unsafe extern "C" fn(
+                CGEventTapProxy,
+                CGEventType,
+                *mut c_void,
+                *const c_void,
+            ) -> *mut c_void,
+            info: *const c_void,
+        ) -> *mut c_void;
+        fn CGEventTapEnable(tap: *mut c_void, enable: bool);
+        fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
+        fn CGEventGetFlags(event: *mut c_void) -> u64;
+        fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
+        fn CFMachPortCreateRunLoopSource(
+            allocator: *const c_void,
+            port: *mut c_void,
+            order: isize,
+        ) -> *mut c_void;
+        fn CFRunLoopGetCurrent() -> *mut c_void;
+        fn CFRunLoopAddSource(run_loop: *mut c_void, source: *mut c_void, mode: *const c_void);
+        fn CFRunLoopRun();
+        static kCFRunLoopCommonModes: *const c_void;
+    }
+
+    #[repr(C)]
+    struct CGPoint {
+        x: f64,
+        y: f64,
+    }
+
+    unsafe extern "C" fn tap_callback(
+        _proxy: CGEventTapProxy,
+        event_type: CGEventType,
+        raw_event: *mut c_void,
+        _info: *const c_void,
+    ) -> *mut c_void {
+        match event_type {
+            CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
+                CGEventTapEnable(TAP_REF, true);
+                return raw_event;
+            }
+            _ => {}
+        }
+
+        let Some(event) = to_rdev_event(event_type, raw_event) else {
+            return raw_event;
+        };
+
+        #[allow(static_mut_refs)]
+        if let Some(callback) = CALLBACK.as_mut() {
+            if callback(event).is_none() {
+                // Returning NULL is the safe way to suppress a macOS event-tap event.
+                return std::ptr::null_mut();
+            }
+        }
+
+        raw_event
+    }
+
+    unsafe fn to_rdev_event(event_type: CGEventType, raw_event: *mut c_void) -> Option<Event> {
+        const KEYCODE_FIELD: u32 = 9;
+        const SCROLL_DELTA_Y_FIELD: u32 = 96;
+        const SCROLL_DELTA_X_FIELD: u32 = 97;
+
+        let event_type = match event_type {
+            CGEventType::LeftMouseDown => EventType::ButtonPress(Button::Left),
+            CGEventType::LeftMouseUp => EventType::ButtonRelease(Button::Left),
+            CGEventType::RightMouseDown => EventType::ButtonPress(Button::Right),
+            CGEventType::RightMouseUp => EventType::ButtonRelease(Button::Right),
+            CGEventType::MouseMoved
+            | CGEventType::LeftMouseDragged
+            | CGEventType::RightMouseDragged => {
+                let point = CGEventGetLocation(raw_event);
+                EventType::MouseMove {
+                    x: point.x,
+                    y: point.y,
+                }
+            }
+            CGEventType::KeyDown => {
+                let code = CGEventGetIntegerValueField(raw_event, KEYCODE_FIELD) as u16;
+                EventType::KeyPress(key_from_code(code))
+            }
+            CGEventType::KeyUp => {
+                let code = CGEventGetIntegerValueField(raw_event, KEYCODE_FIELD) as u16;
+                EventType::KeyRelease(key_from_code(code))
+            }
+            CGEventType::FlagsChanged => {
+                let code = CGEventGetIntegerValueField(raw_event, KEYCODE_FIELD) as u16;
+                let flags = CGEventGetFlags(raw_event);
+
+                if flags < LAST_FLAGS {
+                    LAST_FLAGS = flags;
+                    EventType::KeyRelease(key_from_code(code))
+                } else {
+                    LAST_FLAGS = flags;
+                    EventType::KeyPress(key_from_code(code))
+                }
+            }
+            CGEventType::ScrollWheel => {
+                let delta_y = CGEventGetIntegerValueField(raw_event, SCROLL_DELTA_Y_FIELD);
+                let delta_x = CGEventGetIntegerValueField(raw_event, SCROLL_DELTA_X_FIELD);
+                EventType::Wheel { delta_x, delta_y }
+            }
+            _ => return None,
+        };
+
+        Some(Event {
+            event_type,
+            time: SystemTime::now(),
+            name: None,
+        })
+    }
+
+    fn key_from_code(code: u16) -> Key {
+        match code {
+            0 => Key::KeyA,
+            1 => Key::KeyS,
+            2 => Key::KeyD,
+            3 => Key::KeyF,
+            4 => Key::KeyH,
+            5 => Key::KeyG,
+            6 => Key::KeyZ,
+            7 => Key::KeyX,
+            8 => Key::KeyC,
+            9 => Key::KeyV,
+            11 => Key::KeyB,
+            12 => Key::KeyQ,
+            13 => Key::KeyW,
+            14 => Key::KeyE,
+            15 => Key::KeyR,
+            16 => Key::KeyY,
+            17 => Key::KeyT,
+            18 => Key::Num1,
+            19 => Key::Num2,
+            20 => Key::Num3,
+            21 => Key::Num4,
+            22 => Key::Num6,
+            23 => Key::Num5,
+            24 => Key::Equal,
+            25 => Key::Num9,
+            26 => Key::Num7,
+            27 => Key::Minus,
+            28 => Key::Num8,
+            29 => Key::Num0,
+            30 => Key::RightBracket,
+            31 => Key::KeyO,
+            32 => Key::KeyU,
+            33 => Key::LeftBracket,
+            34 => Key::KeyI,
+            35 => Key::KeyP,
+            36 => Key::Return,
+            37 => Key::KeyL,
+            38 => Key::KeyJ,
+            39 => Key::Quote,
+            40 => Key::KeyK,
+            41 => Key::SemiColon,
+            42 => Key::BackSlash,
+            43 => Key::Comma,
+            44 => Key::Slash,
+            45 => Key::KeyN,
+            46 => Key::KeyM,
+            47 => Key::Dot,
+            48 => Key::Tab,
+            49 => Key::Space,
+            50 => Key::BackQuote,
+            51 => Key::Backspace,
+            53 => Key::Escape,
+            54 => Key::MetaRight,
+            55 => Key::MetaLeft,
+            56 => Key::ShiftLeft,
+            57 => Key::CapsLock,
+            58 => Key::Alt,
+            59 => Key::ControlLeft,
+            60 => Key::ShiftRight,
+            61 => Key::AltGr,
+            62 => Key::ControlRight,
+            63 => Key::Function,
+            96 => Key::F5,
+            97 => Key::F6,
+            98 => Key::F7,
+            99 => Key::F3,
+            100 => Key::F8,
+            101 => Key::F9,
+            103 => Key::F11,
+            109 => Key::F10,
+            111 => Key::F12,
+            118 => Key::F4,
+            120 => Key::F2,
+            122 => Key::F1,
+            123 => Key::LeftArrow,
+            124 => Key::RightArrow,
+            125 => Key::DownArrow,
+            126 => Key::UpArrow,
+            _ => Key::Unknown(code as u32),
+        }
+    }
+
+    pub fn run<F>(callback: F)
+    where
+        F: FnMut(Event) -> Option<Event> + Send + 'static,
+    {
+        let mask: u64 = (1 << 1)
+            | (1 << 2)
+            | (1 << 3)
+            | (1 << 4)
+            | (1 << 5)
+            | (1 << 6)
+            | (1 << 7)
+            | (1 << 10)
+            | (1 << 11)
+            | (1 << 12)
+            | (1 << 22);
+
+        unsafe {
+            CALLBACK = Some(Box::new(callback));
+
+            let tap = CGEventTapCreate(0, 0, 0, mask, tap_callback, std::ptr::null());
+            if tap.is_null() {
+                eprintln!(
+                    "input hook error: failed to create macOS event tap; check Accessibility permissions"
+                );
+                return;
+            }
+
+            TAP_REF = tap;
+
+            let source = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
+            if source.is_null() {
+                eprintln!("input hook error: failed to create macOS run loop source");
+                return;
+            }
+
+            let current_run_loop = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(current_run_loop, source, kCFRunLoopCommonModes);
+            CGEventTapEnable(tap, true);
+            CFRunLoopRun();
+        }
+    }
+}
 
 #[derive(Default)]
 struct HookTracker {
@@ -29,6 +292,10 @@ pub fn spawn_input_hook(shared: Shared) {
         .spawn(move || {
             let tracker = std::sync::Mutex::new(HookTracker::default());
 
+            #[cfg(target_os = "macos")]
+            macos_grab::run(move |event| handle_hook_event(&shared, &tracker, event));
+
+            #[cfg(not(target_os = "macos"))]
             if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, event)) {
                 eprintln!("input hook error: {error:?}");
             }
@@ -131,7 +398,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
             if quit_chord_active(&tracker.held_keys, key) {
                 std::process::exit(0);
             }
-            
+
             // Suppress runtime modifiers while moving
             if is_runtime_modifier(key) && movement_active(&state.pressed_keys) {
                 true
@@ -305,6 +572,14 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
     }
 }
 
+#[cfg(target_os = "macos")]
+fn sync_runtime_modifier_suppression(_state: &SharedState, tracker: &mut HookTracker) {
+    // Keep the macOS hook simple: avoid replaying keyboard events from inside the event tap.
+    tracker.pending_key_events.clear();
+    tracker.suppressed_modifiers.clear();
+}
+
+#[cfg(not(target_os = "macos"))]
 // Keep runtime modifiers active for ViMouse itself while making them temporarily invisible to
 // the OS whenever captured movement is in progress.
 fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
@@ -537,11 +812,7 @@ fn take_passthrough_key_event(
     false
 }
 
-fn mark_passthrough_key_event(
-    tracker: &std::sync::Mutex<HookTracker>,
-    key: Key,
-    is_press: bool,
-) {
+fn mark_passthrough_key_event(tracker: &std::sync::Mutex<HookTracker>, key: Key, is_press: bool) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         let mut tracker = tracker.lock().expect("hook tracker poisoned");
@@ -554,11 +825,7 @@ fn mark_passthrough_key_event(
     }
 }
 
-fn clear_passthrough_key_event(
-    tracker: &std::sync::Mutex<HookTracker>,
-    key: Key,
-    is_press: bool,
-) {
+fn clear_passthrough_key_event(tracker: &std::sync::Mutex<HookTracker>, key: Key, is_press: bool) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         let mut tracker = tracker.lock().expect("hook tracker poisoned");
