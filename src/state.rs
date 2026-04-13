@@ -64,6 +64,7 @@ pub struct SharedState {
     pub left_button_down: bool,
     pub right_button_down: bool,
     pub scroll_remainder: Point,
+    pub pending_actions: Vec<Action>,
 }
 
 impl SharedState {
@@ -77,6 +78,7 @@ impl SharedState {
             left_button_down: false,
             right_button_down: false,
             scroll_remainder: Point::default(),
+            pending_actions: Vec::new(),
         }
     }
 }
