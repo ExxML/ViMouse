@@ -6,11 +6,181 @@ use crate::config::{
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
-use rdev::{grab, simulate, Button, Event, EventType, Key, SimulateError};
+#[cfg(not(target_os = "macos"))]
+use rdev::grab;
+use rdev::{simulate, Button, Event, EventType, Key, SimulateError};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+// On macOS, rdev::grab suppresses events by calling CGEventSetType(event, kCGEventNull).
+// On macOS 15 (Sequoia) this triggers a CoreGraphics assertion (SIGTRAP). The correct
+// way to suppress is to return NULL from the CGEventTap callback. We implement our own
+// grab here that does exactly that.
+#[cfg(target_os = "macos")]
+mod macos_grab {
+    use core_graphics::event::{CGEventTapProxy, CGEventType};
+    use rdev::{Button, Event, EventType, Key};
+    use std::os::raw::c_void;
+    use std::time::SystemTime;
+
+    type GrabCb = Box<dyn FnMut(Event) -> Option<Event> + Send>;
+    static mut CB: Option<GrabCb> = None;
+    static mut TAP_REF: *mut c_void = std::ptr::null_mut();
+    static mut LAST_FLAGS: u64 = 0;
+
+    extern "C" {
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            events: u64,
+            cb: unsafe extern "C" fn(CGEventTapProxy, CGEventType, *mut c_void, *const c_void)
+                -> *mut c_void,
+            info: *const c_void,
+        ) -> *mut c_void;
+        fn CGEventTapEnable(tap: *mut c_void, enable: bool);
+        fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
+        fn CGEventGetFlags(event: *mut c_void) -> u64;
+        fn CGEventGetLocation(event: *mut c_void) -> CgPoint;
+        fn CFMachPortCreateRunLoopSource(
+            allocator: *const c_void,
+            port: *mut c_void,
+            order: isize,
+        ) -> *mut c_void;
+        fn CFRunLoopGetCurrent() -> *mut c_void;
+        fn CFRunLoopAddSource(rl: *mut c_void, source: *mut c_void, mode: *const c_void);
+        fn CFRunLoopRun();
+        static kCFRunLoopCommonModes: *const c_void;
+    }
+
+    #[repr(C)]
+    struct CgPoint {
+        x: f64,
+        y: f64,
+    }
+
+    unsafe extern "C" fn tap_cb(
+        _proxy: CGEventTapProxy,
+        kind: CGEventType,
+        raw: *mut c_void,
+        _info: *const c_void,
+    ) -> *mut c_void {
+        match kind {
+            // If the tap was disabled (e.g. callback was too slow), re-enable it.
+            CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
+                CGEventTapEnable(TAP_REF, true);
+                return raw;
+            }
+            _ => {}
+        }
+        let Some(event) = to_rdev(kind, raw) else {
+            return raw;
+        };
+        #[allow(static_mut_refs)]
+        if let Some(cb) = CB.as_mut() {
+            if cb(event).is_none() {
+                return std::ptr::null_mut(); // Return NULL — the correct way to suppress
+            }
+        }
+        raw
+    }
+
+    unsafe fn to_rdev(kind: CGEventType, raw: *mut c_void) -> Option<Event> {
+        const KEYCODE: u32 = 9;
+        const SCROLL_DY: u32 = 96;
+        const SCROLL_DX: u32 = 97;
+
+        let et = match kind {
+            CGEventType::LeftMouseDown => EventType::ButtonPress(Button::Left),
+            CGEventType::LeftMouseUp => EventType::ButtonRelease(Button::Left),
+            CGEventType::RightMouseDown => EventType::ButtonPress(Button::Right),
+            CGEventType::RightMouseUp => EventType::ButtonRelease(Button::Right),
+            CGEventType::MouseMoved
+            | CGEventType::LeftMouseDragged
+            | CGEventType::RightMouseDragged => {
+                let pt = CGEventGetLocation(raw);
+                EventType::MouseMove { x: pt.x, y: pt.y }
+            }
+            CGEventType::KeyDown => {
+                let code = CGEventGetIntegerValueField(raw, KEYCODE) as u16;
+                EventType::KeyPress(keycode(code))
+            }
+            CGEventType::KeyUp => {
+                let code = CGEventGetIntegerValueField(raw, KEYCODE) as u16;
+                EventType::KeyRelease(keycode(code))
+            }
+            CGEventType::FlagsChanged => {
+                let code = CGEventGetIntegerValueField(raw, KEYCODE) as u16;
+                let flags = CGEventGetFlags(raw);
+                if flags < LAST_FLAGS {
+                    LAST_FLAGS = flags;
+                    EventType::KeyRelease(keycode(code))
+                } else {
+                    LAST_FLAGS = flags;
+                    EventType::KeyPress(keycode(code))
+                }
+            }
+            CGEventType::ScrollWheel => {
+                let dy = CGEventGetIntegerValueField(raw, SCROLL_DY);
+                let dx = CGEventGetIntegerValueField(raw, SCROLL_DX);
+                EventType::Wheel { delta_x: dx, delta_y: dy }
+            }
+            _ => return None,
+        };
+        Some(Event { event_type: et, time: SystemTime::now(), name: None })
+    }
+
+    fn keycode(code: u16) -> Key {
+        match code {
+            0 => Key::KeyA,      1 => Key::KeyS,    2 => Key::KeyD,    3 => Key::KeyF,
+            4 => Key::KeyH,      5 => Key::KeyG,    6 => Key::KeyZ,    7 => Key::KeyX,
+            8 => Key::KeyC,      9 => Key::KeyV,   11 => Key::KeyB,   12 => Key::KeyQ,
+           13 => Key::KeyW,     14 => Key::KeyE,   15 => Key::KeyR,   16 => Key::KeyY,
+           17 => Key::KeyT,     18 => Key::Num1,   19 => Key::Num2,   20 => Key::Num3,
+           21 => Key::Num4,     22 => Key::Num6,   23 => Key::Num5,   24 => Key::Equal,
+           25 => Key::Num9,     26 => Key::Num7,   27 => Key::Minus,  28 => Key::Num8,
+           29 => Key::Num0,     30 => Key::RightBracket,  31 => Key::KeyO,  32 => Key::KeyU,
+           33 => Key::LeftBracket, 34 => Key::KeyI, 35 => Key::KeyP,  36 => Key::Return,
+           37 => Key::KeyL,     38 => Key::KeyJ,   39 => Key::Quote,  40 => Key::KeyK,
+           41 => Key::SemiColon, 42 => Key::BackSlash, 43 => Key::Comma, 44 => Key::Slash,
+           45 => Key::KeyN,     46 => Key::KeyM,   47 => Key::Dot,    48 => Key::Tab,
+           49 => Key::Space,    50 => Key::BackQuote,   51 => Key::Backspace,
+           53 => Key::Escape,   54 => Key::MetaRight,   55 => Key::MetaLeft,
+           56 => Key::ShiftLeft, 57 => Key::CapsLock,  58 => Key::Alt,
+           59 => Key::ControlLeft, 60 => Key::ShiftRight, 61 => Key::AltGr,
+           62 => Key::ControlRight, 63 => Key::Function,
+           96 => Key::F5,       97 => Key::F6,     98 => Key::F7,     99 => Key::F3,
+          100 => Key::F8,      101 => Key::F9,    103 => Key::F11,   109 => Key::F10,
+          111 => Key::F12,     118 => Key::F4,    120 => Key::F2,    122 => Key::F1,
+          123 => Key::LeftArrow, 124 => Key::RightArrow, 125 => Key::DownArrow, 126 => Key::UpArrow,
+            _ => Key::Unknown(code as u32),
+        }
+    }
+
+    pub fn run<F: FnMut(Event) -> Option<Event> + Send + 'static>(callback: F) {
+        // Matches rdev's kCGEventMaskForAllEvents
+        let mask: u64 = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5)
+            | (1 << 6)  | (1 << 7)
+            | (1 << 10) | (1 << 11) | (1 << 12)
+            | (1 << 22);
+        unsafe {
+            CB = Some(Box::new(callback));
+            let tap = CGEventTapCreate(0, 0, 0, mask, tap_cb, std::ptr::null());
+            if tap.is_null() {
+                eprintln!("global input grab failed: CGEventTapCreate returned null (check Accessibility permissions)");
+                return;
+            }
+            TAP_REF = tap;
+            CGEventTapEnable(tap, true);
+            let source = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
+            let rl = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(rl, source, kCFRunLoopCommonModes);
+            CFRunLoopRun();
+        }
+    }
+}
 
 // rdev simulation is global OS state, so serialize synthetic events.
 static SIMULATE_LOCK: Mutex<()> = Mutex::new(());
@@ -42,11 +212,29 @@ pub fn spawn_input_hook(shared: Shared) {
     thread::Builder::new()
         .name("vimouse-hook".into())
         .spawn(move || {
+            let (tx, rx) = mpsc::channel::<InputOutcome>();
             let hook_state = Arc::new(Mutex::new(HookState::default()));
+            let hook_state_dispatch = Arc::clone(&hook_state);
+
+            // Dispatch on a separate thread: rdev::simulate must not be called
+            // from within the grab callback on macOS (CGEventTap restriction).
+            thread::Builder::new()
+                .name("vimouse-dispatch".into())
+                .spawn(move || {
+                    for outcome in rx {
+                        dispatch_actions(&outcome.actions);
+                        dispatch_passthrough_events(&hook_state_dispatch, &outcome.passthrough_events);
+                    }
+                })
+                .expect("failed to spawn dispatch thread");
+
             let hook_shared = shared.clone();
             let hook_runtime = Arc::clone(&hook_state);
             let callback =
-                move |event: Event| handle_input_event(&hook_shared, &hook_runtime, event);
+                move |event: Event| handle_input_event(&hook_shared, &hook_runtime, event, &tx);
+            #[cfg(target_os = "macos")]
+            macos_grab::run(callback);
+            #[cfg(not(target_os = "macos"))]
             if let Err(error) = grab(callback) {
                 eprintln!("global input grab failed: {error:?}");
             }
@@ -87,6 +275,7 @@ fn handle_input_event(
     shared: &Shared,
     hook_state: &Arc<Mutex<HookState>>,
     event: Event,
+    tx: &mpsc::Sender<InputOutcome>,
 ) -> Option<Event> {
     {
         let mut hook = hook_state.lock().expect("hook state poisoned");
@@ -101,10 +290,10 @@ fn handle_input_event(
         process_input_event(&mut state, &mut hook, event.event_type)
     };
 
-    dispatch_actions(&outcome.actions);
-    dispatch_passthrough_events(hook_state, &outcome.passthrough_events);
+    let suppress = outcome.suppress_event;
+    let _ = tx.send(outcome);
 
-    if outcome.suppress_event {
+    if suppress {
         None
     } else {
         Some(event)
