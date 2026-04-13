@@ -113,9 +113,13 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
             if quit_chord_active(&tracker.held_keys, key) {
                 std::process::exit(0);
             }
-
+            
+            // Suppress runtime modifiers while moving
+            if is_runtime_modifier(key) && movement_active(&state.pressed_keys) {
+                true
+            }
             // If a non-ViMouse key started the chord, let the rest of that chord pass through.
-            if has_uncaptured_non_modifier(&tracker, key) {
+            else if has_uncaptured_non_modifier(&tracker, key) {
                 false
             } else if is_move_key(key) {
                 true
@@ -428,6 +432,10 @@ fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
 
 fn scroll_mode_active(keys: &HashSet<Key>) -> bool {
     contains_any(keys, KEYS_SCROLL)
+}
+
+fn movement_active(keys: &HashSet<Key>) -> bool {
+    MOVE_KEYS.iter().any(|key| keys.contains(key))
 }
 
 fn is_move_key(key: Key) -> bool {
