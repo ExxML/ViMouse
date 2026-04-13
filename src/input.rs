@@ -12,11 +12,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const MOVE_KEYS: [Key; 4] = [KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE_RIGHT];
+static SIMULATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Default)]
 struct HookTracker {
     held_keys: HashSet<Key>,
     captured_keys: HashSet<Key>,
+    suppressed_modifiers: HashSet<Key>,
+    passthrough_key_events: Vec<(Key, bool)>,
+    pending_key_events: Vec<(Key, bool)>,
 }
 
 pub fn spawn_input_hook(shared: Shared) {
@@ -72,26 +76,40 @@ fn handle_hook_event(
     event: Event,
 ) -> Option<Event> {
     match event.event_type {
-        EventType::KeyPress(key) => {
-            if handle_key_press(shared, tracker, key) {
-                None
-            } else {
-                Some(event)
-            }
-        }
-        EventType::KeyRelease(key) => {
-            if handle_key_release(shared, tracker, key) {
-                None
-            } else {
-                Some(event)
-            }
-        }
+        EventType::KeyPress(key) => handle_key_event(shared, tracker, event, key, true),
+        EventType::KeyRelease(key) => handle_key_event(shared, tracker, event, key, false),
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
             update_cursor(&mut state, Point { x, y });
             Some(event)
         }
         _ => Some(event),
+    }
+}
+
+fn handle_key_event(
+    shared: &Shared,
+    tracker: &std::sync::Mutex<HookTracker>,
+    event: Event,
+    key: Key,
+    is_press: bool,
+) -> Option<Event> {
+    if take_passthrough_key_event(tracker, key, is_press) {
+        return Some(event);
+    }
+
+    let captured = if is_press {
+        handle_key_press(shared, tracker, key)
+    } else {
+        handle_key_release(shared, tracker, key)
+    };
+
+    emit_pending_key_events(tracker);
+
+    if captured {
+        None
+    } else {
+        Some(event)
     }
 }
 
@@ -147,6 +165,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
         Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
         Mode::Normal => apply_normal_mode_press(&mut state, key),
     }
+    sync_runtime_modifier_suppression(&state, &mut tracker);
 
     true
 }
@@ -155,24 +174,25 @@ fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, 
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     tracker.held_keys.remove(&key);
     let was_captured = tracker.captured_keys.remove(&key);
+    let was_suppressed = tracker.suppressed_modifiers.contains(&key);
 
     let mut state = shared.lock().expect("shared state poisoned");
     update_runtime_modifier_state(&mut state, key, false);
 
-    if !was_captured {
-        return false;
-    }
-
-    match key {
-        KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
-            state.pressed_keys.remove(&key);
+    if was_captured {
+        match key {
+            KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
+                state.pressed_keys.remove(&key);
+            }
+            KEY_LEFT_CLICK => release_mouse_button(&mut state, Button::Left),
+            KEY_RIGHT_CLICK => release_mouse_button(&mut state, Button::Right),
+            _ => {}
         }
-        KEY_LEFT_CLICK => release_mouse_button(&mut state, Button::Left),
-        KEY_RIGHT_CLICK => release_mouse_button(&mut state, Button::Right),
-        _ => {}
     }
 
-    true
+    sync_runtime_modifier_suppression(&state, &mut tracker);
+
+    was_captured || was_suppressed
 }
 
 fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
@@ -282,6 +302,50 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
         }
     } else {
         state.pressed_keys.remove(&key);
+    }
+}
+
+// Keep runtime modifiers active for ViMouse itself while making them temporarily invisible to
+// the OS whenever captured movement is in progress.
+fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
+    let desired_modifiers = if movement_active(&state.pressed_keys) {
+        tracker
+            .held_keys
+            .iter()
+            .copied()
+            .filter(|key| is_runtime_modifier(*key))
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
+
+    let modifiers_to_suppress = desired_modifiers
+        .iter()
+        .copied()
+        .filter(|key| !tracker.suppressed_modifiers.contains(key))
+        .collect::<Vec<_>>();
+    let modifiers_to_restore = tracker
+        .suppressed_modifiers
+        .iter()
+        .copied()
+        .filter(|key| !desired_modifiers.contains(key))
+        .collect::<Vec<_>>();
+
+    for key in modifiers_to_suppress {
+        tracker.suppressed_modifiers.insert(key);
+
+        if !tracker.captured_keys.contains(&key) {
+            tracker.pending_key_events.push((key, false));
+        }
+    }
+
+    for key in modifiers_to_restore {
+        tracker.suppressed_modifiers.remove(&key);
+
+        if tracker.held_keys.contains(&key) {
+            tracker.pending_key_events.push((key, true));
+            tracker.captured_keys.remove(&key);
+        }
     }
 }
 
@@ -411,6 +475,109 @@ fn contains_any(keys: &HashSet<Key>, candidates: &[Key]) -> bool {
     candidates.iter().any(|candidate| keys.contains(candidate))
 }
 
+fn emit_pending_key_events(tracker: &std::sync::Mutex<HookTracker>) {
+    let events = {
+        let mut tracker = tracker.lock().expect("hook tracker poisoned");
+        std::mem::take(&mut tracker.pending_key_events)
+    };
+
+    for (key, is_press) in events {
+        if let Err(error) = emit_synthetic_key_event(tracker, key, is_press) {
+            eprintln!("key emit error: {error}");
+        }
+    }
+}
+
+fn emit_synthetic_key_event(
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    is_press: bool,
+) -> Result<(), String> {
+    let event_type = synthetic_key_event_type(key, is_press);
+
+    mark_passthrough_key_event(tracker, key, is_press);
+
+    if let Err(error) = simulate_input(&event_type) {
+        clear_passthrough_key_event(tracker, key, is_press);
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn synthetic_key_event_type(key: Key, is_press: bool) -> EventType {
+    if is_press {
+        EventType::KeyPress(key)
+    } else {
+        EventType::KeyRelease(key)
+    }
+}
+
+fn take_passthrough_key_event(
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    is_press: bool,
+) -> bool {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        // Low-level hooks on Windows/macOS observe our own replayed key events, so skip any
+        // internal state updates and let those synthetic events continue to the OS.
+        let mut tracker = tracker.lock().expect("hook tracker poisoned");
+
+        if let Some(index) = tracker
+            .passthrough_key_events
+            .iter()
+            .position(|event| *event == (key, is_press))
+        {
+            tracker.passthrough_key_events.swap_remove(index);
+            return true;
+        }
+    }
+
+    false
+}
+
+fn mark_passthrough_key_event(
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    is_press: bool,
+) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let mut tracker = tracker.lock().expect("hook tracker poisoned");
+        tracker.passthrough_key_events.push((key, is_press));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (tracker, key, is_press);
+    }
+}
+
+fn clear_passthrough_key_event(
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    is_press: bool,
+) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let mut tracker = tracker.lock().expect("hook tracker poisoned");
+
+        if let Some(index) = tracker
+            .passthrough_key_events
+            .iter()
+            .position(|event| *event == (key, is_press))
+        {
+            tracker.passthrough_key_events.swap_remove(index);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (tracker, key, is_press);
+    }
+}
+
 fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
     current_key == KEY_QUIT
         && contains_any(held_keys, &[Key::ControlLeft, Key::ControlRight])
@@ -483,6 +650,11 @@ impl InputEmitter {
     }
 }
 
+fn simulate_input(event_type: &EventType) -> Result<(), String> {
+    let _guard = SIMULATE_LOCK.lock().expect("simulate lock poisoned");
+    simulate(event_type).map_err(|_| "rdev input simulation failed".to_string())
+}
+
 fn action_to_event_type(action: &Action, scroll_scale: i64) -> EventType {
     match action {
         Action::MouseMove(point) => EventType::MouseMove {
@@ -518,8 +690,7 @@ impl PlatformEmitter {
                     Ok(())
                 }
             },
-            _ => simulate(&action_to_event_type(action, 1))
-                .map_err(|_| "rdev mouse simulation failed".to_string()),
+            _ => simulate_input(&action_to_event_type(action, 1)),
         }
     }
 }
@@ -536,8 +707,7 @@ impl PlatformEmitter {
     fn emit(&mut self, action: &Action) -> Result<(), String> {
         const MAC_SCROLL_PIXEL_STEP: i64 = 16;
 
-        simulate(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP))
-            .map_err(|_| "rdev mouse simulation failed".to_string())
+        simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP))
     }
 }
 
@@ -626,8 +796,7 @@ impl PlatformEmitter {
             }
         }
 
-        simulate(&action_to_event_type(action, 1))
-            .map_err(|_| "mouse simulation failed".to_string())
+        simulate_input(&action_to_event_type(action, 1))
     }
 }
 
