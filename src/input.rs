@@ -848,7 +848,7 @@ fn linux_button_code(button: Button) -> Option<u32> {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(not(target_os = "macos"))]
 fn clamp_f64_to_i32(value: f64) -> i32 {
     if !value.is_finite() {
         return 0;
