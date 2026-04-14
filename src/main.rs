@@ -3,6 +3,7 @@ mod input;
 mod monitor;
 mod overlay;
 mod platform;
+mod platform_input;
 mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
