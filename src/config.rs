@@ -20,10 +20,10 @@ pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight];
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
-pub const KEY_NORMAL_MODE: Key = Key::Escape;
+pub const KEY_NORMAL_MODE: Key = Key::Quote;
 
 // Monitor cycling
-pub const KEY_CYCLE_MONITOR: Key = Key::Quote;
+pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
 
 // Quit chord
 pub const KEY_QUIT: Key = Key::KeyQ;
