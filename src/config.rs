@@ -23,7 +23,7 @@ pub const KEY_INSERT_MODE: Key = Key::KeyI;
 pub const KEY_NORMAL_MODE: Key = Key::Escape;
 
 // Monitor cycling
-pub const KEY_CYCLE_MONITOR: Key = Key::BackQuote;
+pub const KEY_CYCLE_MONITOR: Key = Key::Quote;
 
 // Quit chord
 pub const KEY_QUIT: Key = Key::KeyQ;
