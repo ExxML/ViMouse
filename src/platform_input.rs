@@ -368,18 +368,63 @@ impl PlatformEmitter {
 }
 
 #[cfg(target_os = "macos")]
-struct PlatformEmitter;
+struct PlatformEmitter {
+    source: core_graphics::event_source::CGEventSource,
+    click_count: i64,
+    last_press_left: Option<bool>,
+    last_press_time: std::time::Instant,
+}
 
 #[cfg(target_os = "macos")]
 impl PlatformEmitter {
     fn new() -> Self {
-        Self
+        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+        Self {
+            source: CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+                .expect("CGEventSource creation failed"),
+            click_count: 0,
+            last_press_left: None,
+            last_press_time: std::time::Instant::now(),
+        }
     }
 
     fn emit(&mut self, action: &Action) -> Result<(), String> {
-        const MAC_SCROLL_PIXEL_STEP: i64 = 16;
+        use core_graphics::event::{
+            CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
+        };
 
-        simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP))
+        const MAC_SCROLL_PIXEL_STEP: i64 = 16;
+        const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
+
+        let (cg_type, cg_button) = match action {
+            Action::ButtonPress(rdev::Button::Left) => (CGEventType::LeftMouseDown, CGMouseButton::Left),
+            Action::ButtonRelease(rdev::Button::Left) => (CGEventType::LeftMouseUp, CGMouseButton::Left),
+            Action::ButtonPress(rdev::Button::Right) => (CGEventType::RightMouseDown, CGMouseButton::Right),
+            Action::ButtonRelease(rdev::Button::Right) => (CGEventType::RightMouseUp, CGMouseButton::Right),
+            _ => return simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP)),
+        };
+
+        if matches!(action, Action::ButtonPress(_)) {
+            let is_left = matches!(cg_button, CGMouseButton::Left);
+            let same_button = self.last_press_left == Some(is_left);
+            self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW {
+                self.click_count + 1
+            } else {
+                1
+            };
+            self.last_press_left = Some(is_left);
+            self.last_press_time = std::time::Instant::now();
+        }
+
+        let pos = CGEvent::new(self.source.clone())
+            .map_err(|_| "CGEvent creation failed".to_string())?
+            .location();
+        let event = CGEvent::new_mouse_event(self.source.clone(), cg_type, pos, cg_button)
+            .map_err(|_| "CGEvent mouse event creation failed".to_string())?;
+        event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, self.click_count);
+        event.post(CGEventTapLocation::HID);
+
+        Ok(())
     }
 }
 
