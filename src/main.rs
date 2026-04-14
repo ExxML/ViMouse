@@ -2,7 +2,7 @@ mod config;
 mod input;
 mod monitor;
 mod overlay;
-mod platform;
+mod platform_cursor;
 mod platform_input;
 mod state;
 

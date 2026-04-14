@@ -1,4 +1,4 @@
-use crate::platform;
+use crate::platform_cursor;
 use crate::state::{MonitorInfo, Point};
 use winit::window::Window;
 
@@ -46,7 +46,7 @@ pub fn fallback_monitor() -> MonitorInfo {
 
 pub fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
     // Prefer the real cursor location so startup does not snap unexpectedly.
-    if let Some((x, y)) = platform::current_cursor_position() {
+    if let Some((x, y)) = platform_cursor::current_cursor_position() {
         return Point { x, y };
     }
 
