@@ -15,8 +15,8 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 
 // Mouse button keys
 pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
-pub const KEY_RIGHT_CLICK: Key = Key::CapsLock;
-pub const KEY_SCROLL: Key = Key::ShiftLeft;
+pub const KEY_RIGHT_CLICK: Key = Key::ShiftLeft;
+pub const KEY_SCROLL: Key = Key::Slash;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
