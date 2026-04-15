@@ -28,20 +28,7 @@ pub fn collect_monitors(window: &Window) -> Vec<MonitorInfo> {
             .then_with(|| left.origin.y.partial_cmp(&right.origin.y).unwrap())
     });
 
-    if monitors.is_empty() {
-        monitors.push(fallback_monitor());
-    }
-
     monitors
-}
-
-// Fallback geometry keeps the app usable even if monitor enumeration fails.
-pub fn fallback_monitor() -> MonitorInfo {
-    MonitorInfo {
-        origin: Point { x: 0.0, y: 0.0 },
-        width: 1920.0,
-        height: 1080.0,
-    }
 }
 
 pub fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
@@ -53,7 +40,7 @@ pub fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
     monitors
         .first()
         .copied()
-        .unwrap_or_else(fallback_monitor)
+        .expect("no monitors available")
         .center()
 }
 

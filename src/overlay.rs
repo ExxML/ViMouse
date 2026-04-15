@@ -1,5 +1,4 @@
 use crate::config::OVERLAY_SIZE;
-use crate::monitor::fallback_monitor;
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
@@ -40,7 +39,7 @@ pub fn current_overlay(shared: &Shared) -> OverlayState {
             .monitors
             .get(state.selected_monitor)
             .copied()
-            .unwrap_or_else(fallback_monitor),
+            .expect("selected monitor out of bounds"),
     }
 }
 
