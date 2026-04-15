@@ -1,11 +1,21 @@
 use rdev::Key;
 
-pub const MOVE_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.7407407407407407;
-pub const SCROLL_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.023148148148148147;
+#[allow(dead_code)]
+pub enum OverlayPos {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+pub const OVERLAY_CORNER: OverlayPos = OverlayPos::BottomLeft;
+
+pub const MOVE_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.6;
+pub const SCROLL_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.02;
 pub const FAST_MULTIPLIER: f64 = 2.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
 pub const TICK_RATE_HZ: u64 = 120;
-pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05925925925925926;
+pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05;
 
 // Movement keys (cursor direction)
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;

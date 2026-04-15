@@ -1,4 +1,4 @@
-use crate::config::OVERLAY_SIZE_MONITOR_FRACTION;
+use crate::config::{OverlayPos, OVERLAY_CORNER, OVERLAY_SIZE_MONITOR_FRACTION};
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
@@ -106,20 +106,39 @@ fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size:
     window.set_inner_size(PhysicalSize::new(overlay_size, overlay_size));
 }
 
-// Keep the overlay anchored to the bottom-right corner of the selected monitor.
 #[cfg(target_os = "macos")]
 fn position_overlay(window: &Window, monitor: &MonitorInfo) {
     let overlay_size = window.outer_size().to_logical::<f64>(monitor.scale_factor);
-    let x = monitor.origin.x + monitor.width - overlay_size.width;
-    let y = monitor.origin.y + monitor.height - overlay_size.height;
+    let x = match OVERLAY_CORNER {
+        OverlayPos::TopLeft | OverlayPos::BottomLeft => monitor.origin.x,
+        OverlayPos::TopRight | OverlayPos::BottomRight => {
+            monitor.origin.x + monitor.width - overlay_size.width
+        }
+    };
+    let y = match OVERLAY_CORNER {
+        OverlayPos::TopLeft | OverlayPos::TopRight => monitor.origin.y,
+        OverlayPos::BottomLeft | OverlayPos::BottomRight => {
+            monitor.origin.y + monitor.height - overlay_size.height
+        }
+    };
     window.set_outer_position(LogicalPosition::new(x, y));
 }
 
 #[cfg(not(target_os = "macos"))]
 fn position_overlay(window: &Window, monitor: &MonitorInfo) {
     let overlay_size = window.outer_size();
-    let x = monitor.origin.x + monitor.width - overlay_size.width as f64;
-    let y = monitor.origin.y + monitor.height - overlay_size.height as f64;
+    let x = match OVERLAY_CORNER {
+        OverlayPos::TopLeft | OverlayPos::BottomLeft => monitor.origin.x,
+        OverlayPos::TopRight | OverlayPos::BottomRight => {
+            monitor.origin.x + monitor.width - overlay_size.width as f64
+        }
+    };
+    let y = match OVERLAY_CORNER {
+        OverlayPos::TopLeft | OverlayPos::TopRight => monitor.origin.y,
+        OverlayPos::BottomLeft | OverlayPos::BottomRight => {
+            monitor.origin.y + monitor.height - overlay_size.height as f64
+        }
+    };
     window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
