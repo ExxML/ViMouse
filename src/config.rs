@@ -17,6 +17,10 @@ pub const SLOW_MULTIPLIER: f64 = 0.3;
 pub const TICK_RATE_HZ: u64 = 120;
 pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05;
 
+// Mode switching
+pub const KEY_INSERT_MODE: Key = Key::KeyI;
+pub const KEY_NORMAL_MODE: Key = Key::Escape;
+
 // Movement keys (cursor direction)
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;
 pub const KEY_MOVE_DOWN: Key = Key::KeyJ;
@@ -26,21 +30,14 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 // Mouse button keys
 pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
 pub const KEY_RIGHT_CLICK: Key = Key::ShiftLeft;
-pub const KEY_SCROLL: Key = Key::Slash;
-
-// Mode switching
-pub const KEY_INSERT_MODE: Key = Key::KeyI;
-pub const KEY_NORMAL_MODE: Key = Key::Escape;
-
-// Monitor cycling
-pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
-
-// Quit chord
-pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];
+pub const KEY_SCROLL: Key = Key::ShiftRight;
 
 // Speed modifier keys
 pub const KEY_FAST: Key = Key::ControlLeft;
 pub const KEY_SLOW: Key = Key::Alt;
+
+// Monitor cycling
+pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
 
 // Jump grid (5 columns × 3 rows, read left-to-right, top-to-bottom)
 // Row 0: Q  W  E  R  T
@@ -51,3 +48,6 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
     [Key::KeyA, Key::KeyS, Key::KeyD, Key::KeyF, Key::KeyG],
     [Key::KeyZ, Key::KeyX, Key::KeyC, Key::KeyV, Key::KeyB],
 ];
+
+// Quit chord
+pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];
