@@ -5,7 +5,9 @@ use crate::config::{
     SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
-use crate::platform_input::{simulate_input, InputEmitter};
+use crate::platform_input::{
+    set_normal_mode_key_remap, shutdown_platform_input, simulate_input, InputEmitter,
+};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
@@ -32,9 +34,15 @@ pub fn spawn_input_hook(shared: Shared) {
             let tracker = std::sync::Mutex::new(HookTracker::default());
 
             #[cfg(target_os = "macos")]
-            crate::platform_input::macos_grab::run(move |event| {
-                handle_hook_event(&shared, &tracker, event)
-            });
+            {
+                let normal_mode_active =
+                    shared.lock().expect("shared state poisoned").mode == Mode::Normal;
+                set_normal_mode_key_remap(normal_mode_active);
+                crate::platform_input::macos_grab::run(move |event| {
+                    handle_hook_event(&shared, &tracker, event)
+                });
+                shutdown_platform_input();
+            }
 
             #[cfg(not(target_os = "macos"))]
             if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, event)) {
@@ -137,6 +145,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
         Mode::Normal => {
             // Identify quit chord instead of a jump-grid Q press.
             if quit_chord_active(&tracker.held_keys, key) {
+                shutdown_platform_input();
                 std::process::exit(0);
             }
 
@@ -220,6 +229,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
 
 fn enter_insert_mode(state: &mut SharedState) {
     state.mode = Mode::Insert;
+    set_normal_mode_key_remap(false);
     state.pressed_keys.clear();
     state.scroll_remainder = Point::default();
     release_mouse_button(state, Button::Left);
@@ -228,6 +238,7 @@ fn enter_insert_mode(state: &mut SharedState) {
 
 fn enter_normal_mode(state: &mut SharedState, held_keys: &HashSet<Key>) {
     state.mode = Mode::Normal;
+    set_normal_mode_key_remap(true);
     state.pressed_keys.clear();
     state.scroll_remainder = Point::default();
 

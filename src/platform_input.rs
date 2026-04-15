@@ -1,7 +1,7 @@
 use crate::state::Action;
-use rdev::{simulate, EventType};
 #[cfg(target_os = "linux")]
 use rdev::Button;
+use rdev::{simulate, EventType};
 
 static SIMULATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -25,21 +25,44 @@ pub fn action_to_event_type(action: &Action, scroll_scale: i64) -> EventType {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn set_normal_mode_key_remap(enabled: bool) {
+    macos_grab::set_caps_lock_remap_enabled(enabled);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_normal_mode_key_remap(_enabled: bool) {}
+
+// Restore the original Caps Lock behavior on macOS if it was remapped,
+// otherwise the keyboard may get stuck in a Caps Lock state
+#[cfg(target_os = "macos")]
+pub fn shutdown_platform_input() {
+    macos_grab::shutdown();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn shutdown_platform_input() {}
+
 // macOS event suppression and simulation works differently than Windows or Linux
 // therefore, we use a custom event tap on macOS instead of rdev's built-in grab/simulate functionality
 // otherwise a "Trace/BPT trap: 5" error is thrown when emitting synthetic key events
 #[cfg(target_os = "macos")]
 pub mod macos_grab {
-    use core_graphics::event::{CGEventTapProxy, CGEventType};
+    use crate::caps_lock_remap;
+    use core_graphics::event::{CGEventFlags, CGEventTapProxy, CGEventType};
     use rdev::{Button, Event, EventType, Key};
     use std::os::raw::c_void;
     use std::time::SystemTime;
 
     type GrabCallback = Box<dyn FnMut(Event) -> Option<Event> + Send>;
 
+    const KEYCODE_FIELD: u32 = 9;
+    const SCROLL_DELTA_Y_FIELD: u32 = 96;
+    const SCROLL_DELTA_X_FIELD: u32 = 97;
+
     static mut CALLBACK: Option<GrabCallback> = None;
     static mut TAP_REF: *mut c_void = std::ptr::null_mut();
-    static mut LAST_FLAGS: u64 = 0;
+    static mut CAPS_LOCK_KEY_DOWN: bool = false;
 
     extern "C" {
         fn CGEventTapCreate(
@@ -84,6 +107,7 @@ pub mod macos_grab {
     ) -> *mut c_void {
         match event_type {
             CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
+                CAPS_LOCK_KEY_DOWN = false;
                 CGEventTapEnable(TAP_REF, true);
                 return raw_event;
             }
@@ -106,10 +130,6 @@ pub mod macos_grab {
     }
 
     unsafe fn to_rdev_event(event_type: CGEventType, raw_event: *mut c_void) -> Option<Event> {
-        const KEYCODE_FIELD: u32 = 9;
-        const SCROLL_DELTA_Y_FIELD: u32 = 96;
-        const SCROLL_DELTA_X_FIELD: u32 = 97;
-
         let event_type = match event_type {
             CGEventType::LeftMouseDown => EventType::ButtonPress(Button::Left),
             CGEventType::LeftMouseUp => EventType::ButtonRelease(Button::Left),
@@ -134,14 +154,18 @@ pub mod macos_grab {
             }
             CGEventType::FlagsChanged => {
                 let code = CGEventGetIntegerValueField(raw_event, KEYCODE_FIELD) as u16;
-                let flags = CGEventGetFlags(raw_event);
-
-                if flags < LAST_FLAGS {
-                    LAST_FLAGS = flags;
-                    EventType::KeyRelease(key_from_code(code))
+                let is_press = if code == 57 {
+                    let was_down = CAPS_LOCK_KEY_DOWN;
+                    CAPS_LOCK_KEY_DOWN = !was_down;
+                    !was_down
                 } else {
-                    LAST_FLAGS = flags;
+                    modifier_flag_active(code, CGEventGetFlags(raw_event))
+                };
+
+                if is_press {
                     EventType::KeyPress(key_from_code(code))
+                } else {
+                    EventType::KeyRelease(key_from_code(code))
                 }
             }
             CGEventType::ScrollWheel => {
@@ -159,7 +183,27 @@ pub mod macos_grab {
         })
     }
 
+    fn modifier_flag_active(code: u16, flags: u64) -> bool {
+        let modifier_flag = match code {
+            54 | 55 => CGEventFlags::CGEventFlagCommand.bits(),
+            56 | 60 => CGEventFlags::CGEventFlagShift.bits(),
+            58 | 61 => CGEventFlags::CGEventFlagAlternate.bits(),
+            59 | 62 => CGEventFlags::CGEventFlagControl.bits(),
+            63 => CGEventFlags::CGEventFlagSecondaryFn.bits(),
+            _ => 0,
+        };
+
+        flags & modifier_flag != 0
+    }
+
     fn key_from_code(code: u16) -> Key {
+        use std::sync::atomic::Ordering;
+        if caps_lock_remap::CAPS_LOCK_REMAP_ACTIVE.load(Ordering::Acquire)
+            && code == caps_lock_remap::VKEY_F18
+        {
+            return Key::CapsLock;
+        }
+
         match code {
             // Letter keys
             0 => Key::KeyA,
@@ -271,6 +315,14 @@ pub mod macos_grab {
             92 => Key::Kp9,
             _ => Key::Unknown(code as u32),
         }
+    }
+
+    pub fn set_caps_lock_remap_enabled(enabled: bool) {
+        caps_lock_remap::set_enabled(enabled);
+    }
+
+    pub fn shutdown() {
+        caps_lock_remap::shutdown();
     }
 
     pub fn run<F>(callback: F)
@@ -397,17 +449,26 @@ impl PlatformEmitter {
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
         let (cg_type, cg_button) = match action {
-            Action::ButtonPress(rdev::Button::Left) => (CGEventType::LeftMouseDown, CGMouseButton::Left),
-            Action::ButtonRelease(rdev::Button::Left) => (CGEventType::LeftMouseUp, CGMouseButton::Left),
-            Action::ButtonPress(rdev::Button::Right) => (CGEventType::RightMouseDown, CGMouseButton::Right),
-            Action::ButtonRelease(rdev::Button::Right) => (CGEventType::RightMouseUp, CGMouseButton::Right),
+            Action::ButtonPress(rdev::Button::Left) => {
+                (CGEventType::LeftMouseDown, CGMouseButton::Left)
+            }
+            Action::ButtonRelease(rdev::Button::Left) => {
+                (CGEventType::LeftMouseUp, CGMouseButton::Left)
+            }
+            Action::ButtonPress(rdev::Button::Right) => {
+                (CGEventType::RightMouseDown, CGMouseButton::Right)
+            }
+            Action::ButtonRelease(rdev::Button::Right) => {
+                (CGEventType::RightMouseUp, CGMouseButton::Right)
+            }
             _ => return simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP)),
         };
 
         if matches!(action, Action::ButtonPress(_)) {
             let is_left = matches!(cg_button, CGMouseButton::Left);
             let same_button = self.last_press_left == Some(is_left);
-            self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW {
+            self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW
+            {
                 self.click_count + 1
             } else {
                 1
