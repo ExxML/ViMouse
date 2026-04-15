@@ -19,9 +19,9 @@ pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
-pub const KEY_NORMAL_MODE: Key = Key::Escape;
+pub const KEY_NORMAL_MODE: Key = Key::Escape; // Recommend using a non-text key
 
-// Movement keys (cursor direction)
+// Cursor movement keys
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;
 pub const KEY_MOVE_DOWN: Key = Key::KeyJ;
 pub const KEY_MOVE_UP: Key = Key::KeyK;
@@ -30,9 +30,9 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 // Mouse button keys
 pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
 pub const KEY_RIGHT_CLICK: Key = Key::ShiftLeft;
-pub const KEY_SCROLL: Key = Key::ShiftRight;
+pub const KEY_SCROLL: Key = Key::ShiftRight; // Recommend using a modifier (non-text) key
 
-// Speed modifier keys
+// Speed modifier keys (recommend using modifier (non-text) keys)
 pub const KEY_FAST: Key = Key::ControlLeft;
 pub const KEY_SLOW: Key = Key::Alt;
 
