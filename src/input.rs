@@ -1,5 +1,5 @@
 use crate::config::{
-    FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_QUIT, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
+    FAST_MULTIPLIER, JUMP_GRID, KEY_CYCLE_MONITOR, KEY_FAST, KEYS_QUIT, KEY_SCROLL, KEY_SLOW,
     KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
     KEY_NORMAL_MODE, KEY_RIGHT_CLICK, MOVE_SPEED_MONITOR_FRACTION_PER_SEC,
     SCROLL_SPEED_MONITOR_FRACTION_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
@@ -476,11 +476,11 @@ fn normalized_direction(keys: &HashSet<Key>) -> Point {
 fn movement_multiplier(keys: &HashSet<Key>) -> f64 {
     let mut multiplier = 1.0;
 
-    if contains_any(keys, KEYS_FAST) {
+    if keys.contains(&KEY_FAST) {
         multiplier *= FAST_MULTIPLIER;
     }
 
-    if contains_any(keys, KEYS_SLOW) {
+    if keys.contains(&KEY_SLOW) {
         multiplier *= SLOW_MULTIPLIER;
     }
 
@@ -510,10 +510,6 @@ fn jump_target(monitor: crate::state::MonitorInfo, key: Key) -> Option<Point> {
     }
 
     None
-}
-
-fn contains_any(keys: &HashSet<Key>, candidates: &[Key]) -> bool {
-    candidates.iter().any(|candidate| keys.contains(candidate))
 }
 
 fn emit_pending_key_events(tracker: &std::sync::Mutex<HookTracker>) {
@@ -628,7 +624,7 @@ fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
 }
 
 fn scroll_mode_active(keys: &HashSet<Key>) -> bool {
-    contains_any(keys, KEYS_SCROLL)
+    keys.contains(&KEY_SCROLL)
 }
 
 fn movement_active(keys: &HashSet<Key>) -> bool {
@@ -651,5 +647,5 @@ fn is_modifier_key(key: Key) -> bool {
 }
 
 fn is_runtime_modifier(key: Key) -> bool {
-    KEYS_SCROLL.contains(&key) || KEYS_FAST.contains(&key) || KEYS_SLOW.contains(&key)
+    key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
 }

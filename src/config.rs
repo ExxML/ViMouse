@@ -16,7 +16,7 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 // Mouse button keys
 pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
 pub const KEY_RIGHT_CLICK: Key = Key::CapsLock;
-pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight];
+pub const KEY_SCROLL: Key = Key::ShiftLeft;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
@@ -29,8 +29,8 @@ pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
 pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];
 
 // Speed modifier keys
-pub const KEYS_FAST: &[Key] = &[Key::ControlLeft, Key::ControlRight];
-pub const KEYS_SLOW: &[Key] = &[Key::Alt, Key::AltGr];
+pub const KEY_FAST: Key = Key::ControlLeft;
+pub const KEY_SLOW: Key = Key::Alt;
 
 // Jump grid (5 columns × 3 rows, read left-to-right, top-to-bottom)
 // Row 0: Q  W  E  R  T
