@@ -1,5 +1,3 @@
-#[cfg(target_os = "macos")]
-mod caps_lock_remap;
 mod config;
 mod input;
 mod monitor;
@@ -11,7 +9,6 @@ mod state;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::{collect_monitors, initial_cursor, monitor_index_for_point};
 use crate::overlay::{create_pixels, create_window, current_overlay, paint_overlay};
-use crate::platform_input::shutdown_platform_input;
 use crate::state::SharedState;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -41,7 +38,6 @@ fn main() {
     let mut last_overlay = current_overlay(&shared);
     if let Err(error) = paint_overlay(&window, &mut pixels, &last_overlay) {
         eprintln!("initial overlay render error: {error}");
-        shutdown_platform_input();
         return;
     }
     window.set_visible(true);
@@ -61,7 +57,6 @@ fn main() {
             WinitEvent::RedrawRequested(_) => {
                 if let Err(error) = paint_overlay(&window, &mut pixels, &last_overlay) {
                     eprintln!("overlay render error: {error}");
-                    shutdown_platform_input();
                     *control_flow = ControlFlow::Exit;
                 }
             }
@@ -69,7 +64,6 @@ fn main() {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                shutdown_platform_input();
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
