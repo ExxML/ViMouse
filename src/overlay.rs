@@ -2,7 +2,11 @@ use crate::config::OVERLAY_SIZE;
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+#[cfg(target_os = "macos")]
+use winit::dpi::LogicalPosition;
+#[cfg(not(target_os = "macos"))]
+use winit::dpi::PhysicalPosition;
+use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder, WindowLevel};
 
@@ -55,10 +59,20 @@ pub fn paint_overlay(
 }
 
 // Keep the overlay anchored to the bottom-right corner of the selected monitor.
+#[cfg(target_os = "macos")]
 fn position_overlay(window: &Window, monitor: &MonitorInfo) {
-    let x = (monitor.origin.x as i32) + monitor.width as i32 - OVERLAY_SIZE as i32;
-    let y = (monitor.origin.y as i32) + monitor.height as i32 - OVERLAY_SIZE as i32;
-    window.set_outer_position(PhysicalPosition::new(x, y));
+    let overlay_size = window.outer_size().to_logical::<f64>(monitor.scale_factor);
+    let x = monitor.origin.x + monitor.width - overlay_size.width;
+    let y = monitor.origin.y + monitor.height - overlay_size.height;
+    window.set_outer_position(LogicalPosition::new(x, y));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn position_overlay(window: &Window, monitor: &MonitorInfo) {
+    let overlay_size = window.outer_size();
+    let x = monitor.origin.x + monitor.width - overlay_size.width as f64;
+    let y = monitor.origin.y + monitor.height - overlay_size.height as f64;
+    window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
 fn draw_overlay(frame: &mut [u8], mode: Mode) {

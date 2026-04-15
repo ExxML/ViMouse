@@ -36,6 +36,7 @@ pub struct MonitorInfo {
     pub origin: Point,
     pub width: f64,
     pub height: f64,
+    pub scale_factor: f64,
 }
 
 impl MonitorInfo {
