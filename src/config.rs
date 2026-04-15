@@ -1,11 +1,11 @@
 use rdev::Key;
 
-pub const MOVE_SPEED_PX_PER_SEC: f64 = 800.0;
-pub const SCROLL_SPEED_UNITS_PER_SEC: f64 = 25.0;
+pub const MOVE_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.7407407407407407;
+pub const SCROLL_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.023148148148148147;
 pub const FAST_MULTIPLIER: f64 = 2.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
 pub const TICK_RATE_HZ: u64 = 120;
-pub const OVERLAY_SIZE: u32 = 64;
+pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05925925925925926;
 
 // Movement keys (cursor direction)
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;

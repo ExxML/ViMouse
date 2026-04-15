@@ -1,8 +1,8 @@
 use crate::config::{
     FAST_MULTIPLIER, JUMP_GRID, KEYS_FAST, KEYS_QUIT, KEYS_SCROLL, KEYS_SLOW, KEY_CYCLE_MONITOR,
     KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
-    KEY_NORMAL_MODE, KEY_RIGHT_CLICK, MOVE_SPEED_PX_PER_SEC, SCROLL_SPEED_UNITS_PER_SEC,
-    SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_NORMAL_MODE, KEY_RIGHT_CLICK, MOVE_SPEED_MONITOR_FRACTION_PER_SEC,
+    SCROLL_SPEED_MONITOR_FRACTION_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 use crate::platform_input::{
@@ -394,12 +394,23 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     }
 
     let speed_multiplier = movement_multiplier(&state.pressed_keys);
+    let Some(monitor) = current_monitor(&state) else {
+        state.scroll_remainder = Point::default();
+        return actions;
+    };
+
     if scroll_mode_active(&state.pressed_keys) {
         // Keep fractional scroll remainder so slower motion still feels steady.
-        state.scroll_remainder.x +=
-            direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
-        state.scroll_remainder.y +=
-            -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        state.scroll_remainder.x += direction.x
+            * monitor.width
+            * SCROLL_SPEED_MONITOR_FRACTION_PER_SEC
+            * speed_multiplier
+            * delta_seconds;
+        state.scroll_remainder.y += -direction.y
+            * monitor.height
+            * SCROLL_SPEED_MONITOR_FRACTION_PER_SEC
+            * speed_multiplier
+            * delta_seconds;
 
         let delta_x = take_scroll_steps(&mut state.scroll_remainder.x);
         let delta_y = take_scroll_steps(&mut state.scroll_remainder.y);
@@ -415,8 +426,16 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
 
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
-    next_cursor.x += direction.x * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
-    next_cursor.y += direction.y * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
+    next_cursor.x += direction.x
+        * monitor.width
+        * MOVE_SPEED_MONITOR_FRACTION_PER_SEC
+        * speed_multiplier
+        * delta_seconds;
+    next_cursor.y += direction.y
+        * monitor.height
+        * MOVE_SPEED_MONITOR_FRACTION_PER_SEC
+        * speed_multiplier
+        * delta_seconds;
     clamp_to_virtual_bounds(&mut next_cursor, &state.monitors);
 
     if next_cursor != previous_cursor {
@@ -440,6 +459,13 @@ fn update_cursor(state: &mut SharedState, point: Point) {
     if let Some(index) = monitor_index_for_point(&state.monitors, clamped) {
         state.selected_monitor = index;
     }
+}
+
+fn current_monitor(state: &SharedState) -> Option<crate::state::MonitorInfo> {
+    monitor_index_for_point(&state.monitors, state.cursor)
+        .or(Some(state.selected_monitor))
+        .and_then(|index| state.monitors.get(index))
+        .copied()
 }
 
 fn normalized_direction(keys: &HashSet<Key>) -> Point {

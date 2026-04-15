@@ -1,12 +1,12 @@
-use crate::config::OVERLAY_SIZE;
+use crate::config::OVERLAY_SIZE_MONITOR_FRACTION;
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
-#[cfg(target_os = "macos")]
-use winit::dpi::LogicalPosition;
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
+#[cfg(target_os = "macos")]
+use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder, WindowLevel};
 
@@ -23,7 +23,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
         .with_resizable(false)
         .with_visible(false)
         .with_window_level(WindowLevel::AlwaysOnTop)
-        .with_inner_size(PhysicalSize::new(OVERLAY_SIZE, OVERLAY_SIZE))
+        .with_inner_size(PhysicalSize::new(1, 1))
         .build(event_loop)
         .expect("failed to create overlay window")
 }
@@ -31,7 +31,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 pub fn create_pixels(window: &Window) -> Pixels {
     let window_size = window.inner_size();
     let surface = SurfaceTexture::new(window_size.width, window_size.height, window);
-    Pixels::new(OVERLAY_SIZE, OVERLAY_SIZE, surface).expect("pixels init failed")
+    Pixels::new(window_size.width, window_size.height, surface).expect("pixels init failed")
 }
 
 // Snapshot just the overlay-relevant state so the UI code stays simple.
@@ -53,9 +53,57 @@ pub fn paint_overlay(
     pixels: &mut Pixels,
     overlay: &OverlayState,
 ) -> Result<(), Error> {
+    let overlay_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
     position_overlay(window, &overlay.monitor);
-    draw_overlay(pixels.frame_mut(), overlay.mode);
+    draw_overlay(pixels.frame_mut(), overlay.mode, overlay_size as usize);
     pixels.render()
+}
+
+fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
+    (monitor.width.min(monitor.height) * OVERLAY_SIZE_MONITOR_FRACTION)
+        .round()
+        .max(1.0) as u32
+}
+
+fn sync_overlay_size(
+    window: &Window,
+    pixels: &mut Pixels,
+    monitor: &MonitorInfo,
+) -> Result<u32, Error> {
+    let overlay_size = overlay_size_for_monitor(*monitor);
+    let inner_size = overlay_inner_size(monitor, overlay_size);
+
+    if window.inner_size() != inner_size {
+        set_overlay_inner_size(window, monitor, overlay_size);
+        pixels.resize_buffer(inner_size.width, inner_size.height)?;
+        pixels.resize_surface(inner_size.width, inner_size.height)?;
+    }
+
+    Ok(inner_size.width)
+}
+
+#[cfg(target_os = "macos")]
+fn overlay_inner_size(monitor: &MonitorInfo, overlay_size: u32) -> PhysicalSize<u32> {
+    let physical_size = (overlay_size as f64 * monitor.scale_factor)
+        .round()
+        .max(1.0) as u32;
+    PhysicalSize::new(physical_size, physical_size)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn overlay_inner_size(_monitor: &MonitorInfo, overlay_size: u32) -> PhysicalSize<u32> {
+    PhysicalSize::new(overlay_size, overlay_size)
+}
+
+#[cfg(target_os = "macos")]
+fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size: u32) {
+    let overlay_size = overlay_size as f64;
+    window.set_inner_size(LogicalSize::new(overlay_size, overlay_size));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size: u32) {
+    window.set_inner_size(PhysicalSize::new(overlay_size, overlay_size));
 }
 
 // Keep the overlay anchored to the bottom-right corner of the selected monitor.
@@ -75,7 +123,7 @@ fn position_overlay(window: &Window, monitor: &MonitorInfo) {
     window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
-fn draw_overlay(frame: &mut [u8], mode: Mode) {
+fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
     // Fill the whole square first so there is never an unpainted border.
     let [r, g, b, a] = mode.background();
     for chunk in frame.chunks_exact_mut(4) {
@@ -89,7 +137,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
         .get(mode.label())
         .expect("overlay glyph should exist");
     // Preserve the original apparent text size while scaling with larger overlays.
-    let scale = (((OVERLAY_SIZE as usize) * 3) + 20) / 40;
+    let scale = ((overlay_size * 3) + 20) / 40;
     let scale = scale.max(1);
     let mut min_col = 8usize;
     let mut max_col = 0usize;
@@ -117,8 +165,8 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
     let glyph_width = (max_col - min_col + 1) * scale;
     let glyph_height = (max_row - min_row + 1) * scale;
     // Center the actual painted glyph bounds, not the full 8x8 font cell.
-    let offset_x = ((OVERLAY_SIZE as usize) - glyph_width) / 2;
-    let offset_y = ((OVERLAY_SIZE as usize) - glyph_height) / 2;
+    let offset_x = (overlay_size - glyph_width) / 2;
+    let offset_y = (overlay_size - glyph_height) / 2;
 
     for (row, bits) in glyph.iter().enumerate() {
         for col in 0..8usize {
@@ -130,7 +178,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode) {
                 for dx in 0..scale {
                     let px = offset_x + ((col - min_col) * scale) + dx;
                     let py = offset_y + ((row - min_row) * scale) + dy;
-                    let index = (py * OVERLAY_SIZE as usize + px) * 4;
+                    let index = (py * overlay_size + px) * 4;
                     frame[index] = 255;
                     frame[index + 1] = 255;
                     frame[index + 2] = 255;
