@@ -159,7 +159,6 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
             } else if is_move_key(key) {
                 true
             } else if key == KEY_INSERT_MODE
-                || key == KEY_NORMAL_MODE
                 || key == KEY_CYCLE_MONITOR
                 || key == KEY_LEFT_CLICK
                 || key == KEY_RIGHT_CLICK
