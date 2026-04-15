@@ -1,6 +1,6 @@
-mod config;
 #[cfg(target_os = "macos")]
 mod caps_lock_remap;
+mod config;
 mod input;
 mod monitor;
 mod overlay;

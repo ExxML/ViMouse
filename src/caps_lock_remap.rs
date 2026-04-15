@@ -112,8 +112,7 @@ impl Drop for CapsLockRemapper {
 
 fn copy_user_key_mapping(client: IOHIDEventSystemClientRef) -> Option<CFType> {
     let key = CFString::from_static_string("UserKeyMapping");
-    let value =
-        unsafe { IOHIDEventSystemClientCopyProperty(client, key.as_concrete_TypeRef()) };
+    let value = unsafe { IOHIDEventSystemClientCopyProperty(client, key.as_concrete_TypeRef()) };
 
     if value.is_null() {
         None
