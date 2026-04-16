@@ -1,7 +1,7 @@
 use crate::config::{
-    FAST_MULTIPLIER, JUMP_GRID, KEY_CYCLE_MONITOR, KEY_FAST, KEYS_QUIT, KEY_SCROLL, KEY_SLOW,
-    KEY_INSERT_MODE, KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
-    KEY_NORMAL_MODE, KEY_RIGHT_CLICK, MOVE_SPEED_MONITOR_FRACTION_PER_SEC,
+    FAST_MULTIPLIER, JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
+    KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
+    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, MOVE_SPEED_MONITOR_FRACTION_PER_SEC,
     SCROLL_SPEED_MONITOR_FRACTION_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
@@ -608,7 +608,9 @@ fn clear_passthrough_key_event(tracker: &std::sync::Mutex<HookTracker>, key: Key
 
 fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
     KEYS_QUIT.contains(&current_key)
-        && KEYS_QUIT.iter().all(|k| held_keys.contains(k) || *k == current_key)
+        && KEYS_QUIT
+            .iter()
+            .all(|k| held_keys.contains(k) || *k == current_key)
         && held_keys.iter().all(|k| KEYS_QUIT.contains(k))
 }
 

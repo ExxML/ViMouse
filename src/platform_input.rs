@@ -397,17 +397,26 @@ impl PlatformEmitter {
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
         let (cg_type, cg_button) = match action {
-            Action::ButtonPress(rdev::Button::Left) => (CGEventType::LeftMouseDown, CGMouseButton::Left),
-            Action::ButtonRelease(rdev::Button::Left) => (CGEventType::LeftMouseUp, CGMouseButton::Left),
-            Action::ButtonPress(rdev::Button::Right) => (CGEventType::RightMouseDown, CGMouseButton::Right),
-            Action::ButtonRelease(rdev::Button::Right) => (CGEventType::RightMouseUp, CGMouseButton::Right),
+            Action::ButtonPress(rdev::Button::Left) => {
+                (CGEventType::LeftMouseDown, CGMouseButton::Left)
+            }
+            Action::ButtonRelease(rdev::Button::Left) => {
+                (CGEventType::LeftMouseUp, CGMouseButton::Left)
+            }
+            Action::ButtonPress(rdev::Button::Right) => {
+                (CGEventType::RightMouseDown, CGMouseButton::Right)
+            }
+            Action::ButtonRelease(rdev::Button::Right) => {
+                (CGEventType::RightMouseUp, CGMouseButton::Right)
+            }
             _ => return simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP)),
         };
 
         if matches!(action, Action::ButtonPress(_)) {
             let is_left = matches!(cg_button, CGMouseButton::Left);
             let same_button = self.last_press_left == Some(is_left);
-            self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW {
+            self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW
+            {
                 self.click_count + 1
             } else {
                 1
