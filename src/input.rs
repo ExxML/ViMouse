@@ -132,14 +132,13 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
         return tracker.captured_keys.contains(&key);
     }
 
+    if quit_chord_active(&tracker.held_keys, key) {
+        std::process::exit(0);
+    }
+
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
-            // Identify quit chord instead of a jump-grid Q press.
-            if quit_chord_active(&tracker.held_keys, key) {
-                std::process::exit(0);
-            }
-
             // Suppress runtime modifiers while moving
             if is_runtime_modifier(key) && movement_active(&state.pressed_keys) {
                 true
