@@ -15,7 +15,7 @@ pub const SCROLL_SPEED_MONITOR_FRACTION_PER_SEC: f64 = 0.02;
 pub const FAST_MULTIPLIER: f64 = 2.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
 pub const TICK_RATE_HZ: u64 = 240;
-pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.05;
+pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
