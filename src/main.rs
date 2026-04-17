@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod config;
 mod input;
 mod monitor;
@@ -8,15 +10,18 @@ mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::{collect_monitors, initial_cursor, monitor_index_for_point};
-use crate::overlay::{create_pixels, create_window, current_overlay, paint_overlay};
+use crate::overlay::{
+    create_event_loop, create_pixels, create_window, current_overlay, paint_overlay,
+    show_overlay_window,
+};
 use crate::state::SharedState;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::ControlFlow;
 
 fn main() {
-    let event_loop = EventLoop::new();
+    let event_loop = create_event_loop();
     let window = create_window(&event_loop);
 
     // Discover monitors first so cursor jumps and the overlay use the same coordinate space.
@@ -40,7 +45,7 @@ fn main() {
         eprintln!("initial overlay render error: {error}");
         return;
     }
-    window.set_visible(true);
+    show_overlay_window(&window);
 
     event_loop.run(move |event, _, control_flow| {
         // The overlay only changes when the mode or focused monitor changes.

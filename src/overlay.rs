@@ -7,7 +7,15 @@ use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 #[cfg(target_os = "macos")]
 use winit::dpi::{LogicalPosition, LogicalSize};
-use winit::event_loop::EventLoop;
+use winit::event_loop::{EventLoop, EventLoopBuilder};
+#[cfg(target_os = "macos")]
+use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+#[cfg(target_os = "windows")]
+use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
+#[cfg(target_os = "linux")]
+use winit::platform::x11::{
+    EventLoopBuilderExtX11, WindowBuilderExtX11, WindowExtX11, XWindowType,
+};
 use winit::window::{Window, WindowBuilder, WindowLevel};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,16 +24,46 @@ pub struct OverlayState {
     pub monitor: MonitorInfo,
 }
 
+pub fn create_event_loop() -> EventLoop<()> {
+    let mut builder = EventLoopBuilder::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        builder.with_activation_policy(ActivationPolicy::Accessory);
+        builder.with_default_menu(false);
+        builder.with_activate_ignoring_other_apps(false);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // The Linux input and cursor backends already rely on X11 APIs.
+        builder.with_x11();
+    }
+
+    builder.build()
+}
+
 pub fn create_window(event_loop: &EventLoop<()>) -> Window {
-    WindowBuilder::new()
-        .with_title("ViMouse")
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_visible(false)
-        .with_window_level(WindowLevel::AlwaysOnTop)
-        .with_inner_size(PhysicalSize::new(1, 1))
-        .build(event_loop)
-        .expect("failed to create overlay window")
+    let window = configure_window_builder(
+        WindowBuilder::new()
+            .with_title("ViMouse")
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_visible(false)
+            .with_active(false)
+            .with_window_level(WindowLevel::AlwaysOnTop)
+            .with_inner_size(PhysicalSize::new(1, 1)),
+    )
+    .build(event_loop)
+    .expect("failed to create overlay window");
+
+    configure_overlay_window(&window);
+    window
+}
+
+pub fn show_overlay_window(window: &Window) {
+    window.set_visible(true);
+    finalize_overlay_window(window);
 }
 
 pub fn create_pixels(window: &Window) -> Pixels {
@@ -207,3 +245,104 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    builder.with_skip_taskbar(true)
+}
+
+#[cfg(target_os = "linux")]
+fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    builder
+        .with_override_redirect(true)
+        .with_x11_window_type(vec![XWindowType::Notification])
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    builder
+}
+
+fn configure_overlay_window(window: &Window) {
+    configure_overlay_hittest(window);
+    configure_platform_overlay_window(window);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_overlay_hittest(window: &Window) {
+    // Click-through keeps the overlay from stealing interaction on platforms where winit supports it.
+    let _ = window.set_cursor_hittest(false);
+}
+
+#[cfg(target_os = "windows")]
+fn configure_overlay_hittest(_window: &Window) {}
+
+#[cfg(target_os = "linux")]
+fn configure_platform_overlay_window(window: &Window) {
+    use std::ffi::c_void;
+    use x11_dl::xlib;
+
+    let Some(display) = window.xlib_display() else {
+        return;
+    };
+    let Some(xwindow) = window.xlib_window() else {
+        return;
+    };
+    let Ok(xlib) = xlib::Xlib::open() else {
+        return;
+    };
+
+    unsafe {
+        let display = display as *mut xlib::Display;
+        let hints = {
+            let existing = (xlib.XGetWMHints)(display, xwindow);
+            if existing.is_null() {
+                (xlib.XAllocWMHints)()
+            } else {
+                existing
+            }
+        };
+
+        if hints.is_null() {
+            return;
+        }
+
+        (*hints).flags |= xlib::InputHint;
+        (*hints).input = 0;
+        (xlib.XSetWMHints)(display, xwindow, hints);
+        (xlib.XFlush)(display);
+        (xlib.XFree)(hints as *mut c_void);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn configure_platform_overlay_window(_window: &Window) {}
+
+#[cfg(target_os = "windows")]
+fn finalize_overlay_window(window: &Window) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_APPWINDOW,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+
+    unsafe {
+        let hwnd = window.hwnd() as HWND;
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let overlay_ex_style = (ex_style & !WS_EX_APPWINDOW) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, overlay_ex_style as isize);
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn finalize_overlay_window(_window: &Window) {}
