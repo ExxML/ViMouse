@@ -219,7 +219,6 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
 fn enter_insert_mode(state: &mut SharedState) {
     state.mode = Mode::Insert;
     state.pressed_keys.clear();
-    state.scroll_remainder = Point::default();
     release_mouse_button(state, Button::Left);
     release_mouse_button(state, Button::Right);
 }
@@ -227,7 +226,6 @@ fn enter_insert_mode(state: &mut SharedState) {
 fn enter_normal_mode(state: &mut SharedState, held_keys: &HashSet<Key>) {
     state.mode = Mode::Normal;
     state.pressed_keys.clear();
-    state.scroll_remainder = Point::default();
 
     for key in held_keys {
         if is_runtime_modifier(*key) {
@@ -371,40 +369,27 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     actions.append(&mut state.pending_actions);
 
     if state.mode != Mode::Normal {
-        state.scroll_remainder = Point::default();
         return actions;
     }
 
     let direction = normalized_direction(&state.pressed_keys);
     if direction.x == 0.0 && direction.y == 0.0 {
-        state.scroll_remainder = Point::default();
         return actions;
     }
 
     let speed_multiplier = movement_multiplier(&state.pressed_keys);
     let Some(_monitor) = current_monitor(&state) else {
-        state.scroll_remainder = Point::default();
         return actions;
     };
 
     if scroll_mode_active(&state.pressed_keys) {
-        // Keep fractional scroll remainder so slower motion still feels steady.
-        state.scroll_remainder.x +=
-            direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
-        state.scroll_remainder.y +=
-            -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        let delta_x = -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        let delta_y = -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
 
-        let delta_x = take_scroll_steps(&mut state.scroll_remainder.x);
-        let delta_y = take_scroll_steps(&mut state.scroll_remainder.y);
-
-        if delta_x != 0 || delta_y != 0 {
-            actions.push(Action::Scroll { delta_x, delta_y });
-        }
+        actions.push(Action::Scroll { delta_x, delta_y });
 
         return actions;
     }
-
-    state.scroll_remainder = Point::default();
 
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
@@ -472,11 +457,6 @@ fn movement_multiplier(keys: &HashSet<Key>) -> f64 {
     multiplier
 }
 
-fn take_scroll_steps(remainder: &mut f64) -> i64 {
-    let whole = remainder.trunc() as i64;
-    *remainder -= whole as f64;
-    whole
-}
 
 fn jump_target(monitor: crate::state::MonitorInfo, key: Key) -> Option<Point> {
     for (row, keys) in JUMP_GRID.iter().enumerate() {

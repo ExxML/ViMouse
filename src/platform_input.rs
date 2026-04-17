@@ -10,15 +10,15 @@ pub fn simulate_input(event_type: &EventType) -> Result<(), String> {
     simulate(event_type).map_err(|_| "rdev input simulation failed".to_string())
 }
 
-pub fn action_to_event_type(action: &Action, scroll_scale: i64) -> EventType {
+pub fn action_to_event_type(action: &Action, scroll_scale: f64) -> EventType {
     match action {
         Action::MouseMove(point) => EventType::MouseMove {
             x: point.x,
             y: point.y,
         },
         Action::Scroll { delta_x, delta_y } => EventType::Wheel {
-            delta_x: delta_x.saturating_mul(scroll_scale),
-            delta_y: delta_y.saturating_mul(scroll_scale),
+            delta_x: (delta_x * scroll_scale).round() as i64,
+            delta_y: (delta_y * scroll_scale).round() as i64,
         },
         Action::ButtonPress(button) => EventType::ButtonPress(*button),
         Action::ButtonRelease(button) => EventType::ButtonRelease(*button),
@@ -362,7 +362,7 @@ impl PlatformEmitter {
                     Ok(())
                 }
             },
-            _ => simulate_input(&action_to_event_type(action, 1)),
+            _ => simulate_input(&action_to_event_type(action, 1.0)),
         }
     }
 }
@@ -393,7 +393,6 @@ impl PlatformEmitter {
             CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
         };
 
-        const MAC_SCROLL_PIXEL_STEP: i64 = 16;
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
         let (cg_type, cg_button) = match action {
@@ -409,7 +408,10 @@ impl PlatformEmitter {
             Action::ButtonRelease(rdev::Button::Right) => {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
-            _ => return simulate_input(&action_to_event_type(action, MAC_SCROLL_PIXEL_STEP)),
+            _ => return simulate_input(
+                // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
+                &action_to_event_type(action, 16.0)
+            ),
         };
 
         if matches!(action, Action::ButtonPress(_)) {
@@ -493,8 +495,8 @@ impl PlatformEmitter {
                     ),
                     Action::Scroll { delta_x, delta_y } => {
                         let mut result = 1;
-                        result &= emit_scroll_axis(xtest, self.display, *delta_x, 6, 7);
-                        result &= emit_scroll_axis(xtest, self.display, *delta_y, 5, 4);
+                        result &= emit_scroll_axis(xtest, self.display, delta_x.round() as i64, 6, 7);
+                        result &= emit_scroll_axis(xtest, self.display, delta_y.round() as i64, 5, 4);
                         result
                     }
                     Action::ButtonPress(button) => {
@@ -522,7 +524,7 @@ impl PlatformEmitter {
             }
         }
 
-        simulate_input(&action_to_event_type(action, 1))
+        simulate_input(&action_to_event_type(action, 1.0))
     }
 }
 

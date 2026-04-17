@@ -64,7 +64,6 @@ pub struct SharedState {
     pub pressed_keys: HashSet<Key>,
     pub left_button_down: bool,
     pub right_button_down: bool,
-    pub scroll_remainder: Point,
     pub pending_actions: Vec<Action>,
 }
 
@@ -78,7 +77,6 @@ impl SharedState {
             pressed_keys: HashSet::new(),
             left_button_down: false,
             right_button_down: false,
-            scroll_remainder: Point::default(),
             pending_actions: Vec::new(),
         }
     }
@@ -89,7 +87,7 @@ pub type Shared = Arc<Mutex<SharedState>>;
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
     MouseMove(Point),
-    Scroll { delta_x: i64, delta_y: i64 },
+    Scroll { delta_x: f64, delta_y: f64 },
     ButtonPress(Button),
     ButtonRelease(Button),
 }
