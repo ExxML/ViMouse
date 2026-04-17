@@ -1,4 +1,3 @@
-use crate::platform_cursor;
 use crate::state::{MonitorInfo, Point};
 use winit::monitor::MonitorHandle;
 use winit::window::Window;
@@ -52,19 +51,6 @@ fn monitor_info(monitor: &MonitorHandle) -> MonitorInfo {
         height: size.height as f64,
         scale_factor: monitor.scale_factor(),
     }
-}
-
-pub fn initial_cursor(monitors: &[MonitorInfo]) -> Point {
-    // Prefer the real cursor location so startup does not snap unexpectedly.
-    if let Some((x, y)) = platform_cursor::current_cursor_position() {
-        return Point { x, y };
-    }
-
-    monitors
-        .first()
-        .copied()
-        .expect("no monitors available")
-        .center()
 }
 
 fn clamp_axis(value: f64, start: f64, length: f64) -> f64 {

@@ -4,17 +4,16 @@ mod config;
 mod input;
 mod monitor;
 mod overlay;
-mod platform_cursor;
 mod platform_input;
 mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
-use crate::monitor::{collect_monitors, initial_cursor, monitor_index_for_point};
+use crate::monitor::collect_monitors;
 use crate::overlay::{
     create_event_loop, create_pixels, create_window, current_overlay, paint_overlay,
     show_overlay_window,
 };
-use crate::state::SharedState;
+use crate::state::{Action, SharedState};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
@@ -24,16 +23,18 @@ fn main() {
     let event_loop = create_event_loop();
     let window = create_window(&event_loop);
 
-    // Discover monitors first so cursor jumps and the overlay use the same coordinate space.
+    // Discover monitors first so the initial cursor state and overlay use the same coordinate space.
     let monitors = collect_monitors(&window);
-    let initial_cursor = initial_cursor(&monitors);
-    let initial_monitor = monitor_index_for_point(&monitors, initial_cursor).unwrap_or(0);
+    let initial_cursor = monitors
+        .first()
+        .copied()
+        .expect("no monitors available")
+        .center();
 
-    let shared = Arc::new(Mutex::new(SharedState::new(
-        initial_cursor,
-        initial_monitor,
-        monitors,
-    )));
+    let mut state = SharedState::new(initial_cursor, 0, monitors);
+    state.pending_actions.push(Action::MouseMove(initial_cursor));
+
+    let shared = Arc::new(Mutex::new(state));
 
     spawn_input_hook(Arc::clone(&shared));
     spawn_motion_loop(Arc::clone(&shared));
