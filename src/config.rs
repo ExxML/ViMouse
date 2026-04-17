@@ -29,11 +29,11 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 
 // Mouse button keys
 pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
-pub const KEY_RIGHT_CLICK: Key = Key::ShiftLeft;
-pub const KEY_SCROLL: Key = Key::ShiftRight; // Recommend using a modifier (non-text) key
+pub const KEY_RIGHT_CLICK: Key = Key::Quote;
+pub const KEY_SCROLL: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
 
-// Speed modifier keys (recommend using modifier (non-text) keys)
-pub const KEY_FAST: Key = Key::ControlLeft;
+// Speed modifier keys (recommend using modifier or non-text keys)
+pub const KEY_FAST: Key = Key::Space;
 pub const KEY_SLOW: Key = Key::Alt;
 
 // Monitor cycling
