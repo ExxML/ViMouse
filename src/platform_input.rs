@@ -314,6 +314,28 @@ pub mod macos_grab {
             CFRunLoopRun();
         }
     }
+
+    pub fn is_accessibility_trusted(prompt: bool) -> bool {
+        use core_foundation::base::TCFType;
+        use core_foundation::boolean::CFBoolean;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::string::CFString;
+
+        extern "C" {
+            fn AXIsProcessTrustedWithOptions(
+                options: core_foundation::dictionary::CFDictionaryRef,
+            ) -> bool;
+        }
+
+        let key = CFString::new("AXTrustedCheckOptionPrompt");
+        let val = if prompt {
+            CFBoolean::true_value()
+        } else {
+            CFBoolean::false_value()
+        };
+        let dict = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), val.as_CFType())]);
+        unsafe { AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef()) }
+    }
 }
 
 pub struct InputEmitter {

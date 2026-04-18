@@ -20,6 +20,12 @@ use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    if !crate::platform_input::macos_grab::is_accessibility_trusted(true) {
+        eprintln!("Accessibility permission required. Grant access in System Settings → Privacy & Security → Accessibility, then relaunch.");
+        std::process::exit(1);
+    }
+
     let event_loop = create_event_loop();
     let window = create_window(&event_loop);
 
