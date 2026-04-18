@@ -65,6 +65,7 @@ pub struct SharedState {
     pub left_button_down: bool,
     pub right_button_down: bool,
     pub pending_actions: Vec<Action>,
+    pub show_grid: bool,
 }
 
 impl SharedState {
@@ -78,6 +79,7 @@ impl SharedState {
             left_button_down: false,
             right_button_down: false,
             pending_actions: Vec::new(),
+            show_grid: false,
         }
     }
 }

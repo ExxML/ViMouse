@@ -1,8 +1,8 @@
 use crate::config::{
     FAST_MULTIPLIER, JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
     KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
-    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, MOVE_SPEED_PX_PER_SEC, SCROLL_SPEED_UNITS_PER_SEC,
-    SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, MOVE_SPEED_PX_PER_SEC,
+    SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -162,6 +162,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
                 || key == KEY_CYCLE_MONITOR
                 || key == KEY_LEFT_CLICK
                 || key == KEY_RIGHT_CLICK
+                || key == KEY_TOGGLE_GRID
                 || is_jump_key(key)
             {
                 no_modifiers_held(&tracker.held_keys)
@@ -218,6 +219,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
         KEY_CYCLE_MONITOR => cycle_monitor(state),
         KEY_LEFT_CLICK => press_mouse_button(state, Button::Left),
         KEY_RIGHT_CLICK => press_mouse_button(state, Button::Right),
+        KEY_TOGGLE_GRID => state.show_grid = !state.show_grid,
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
             state.pressed_keys.insert(key);
         }

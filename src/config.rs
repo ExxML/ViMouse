@@ -49,5 +49,8 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
     [Key::KeyZ, Key::KeyX, Key::KeyC, Key::KeyV, Key::KeyB],
 ];
 
+// Toggle jump grid overlay (Normal mode only)
+pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
+
 // Quit chord
 pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];
