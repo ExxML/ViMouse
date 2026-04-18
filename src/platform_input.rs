@@ -33,8 +33,6 @@ pub fn set_caps_lock_remap(enabled: bool) {
 pub fn shutdown_platform_input() {
     #[cfg(target_os = "macos")]
     macos_grab::shutdown();
-    #[cfg(not(target_os = "macos"))]
-    crate::caps_lock_suppress::restore();
 }
 
 // macOS event suppression and simulation works differently than Windows or Linux

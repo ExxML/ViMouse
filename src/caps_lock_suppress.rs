@@ -1,5 +1,5 @@
-// Windows/Linux only. Disables the Caps Lock toggle state and LED for the duration of the app so
-// the key acts purely as a ViMouse trigger with no side effects. Restored on exit or panic.
+// Windows/Linux only. Disables the Caps Lock toggle state and LED on launch so
+// the key acts purely as a ViMouse trigger with no side effects. Re-enabled on exit or panic.
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static SUPPRESSED: AtomicBool = AtomicBool::new(false);
@@ -35,13 +35,6 @@ pub fn suppress() {
     }
 }
 
-pub fn restore() {
-    if !SUPPRESSED.swap(false, Ordering::AcqRel) {
-        return;
-    }
-    platform_restore();
-}
-
 #[cfg(target_os = "windows")]
 fn platform_suppress() -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -57,20 +50,6 @@ fn platform_suppress() -> bool {
     true
 }
 
-#[cfg(target_os = "windows")]
-fn platform_restore() {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, KEYEVENTF_KEYUP, VK_CAPITAL, keybd_event,
-    };
-    unsafe {
-        // If Caps Lock is currently off, toggle it back on.
-        if GetKeyState(VK_CAPITAL as i32) & 0x0001 == 0 {
-            keybd_event(VK_CAPITAL as u8, 0x3A, 0, 0);
-            keybd_event(VK_CAPITAL as u8, 0x3A, KEYEVENTF_KEYUP, 0);
-        }
-    }
-}
-
 #[cfg(target_os = "linux")]
 fn platform_suppress() -> bool {
     with_display(|xlib, display| unsafe {
@@ -78,14 +57,6 @@ fn platform_suppress() -> bool {
         (xlib.XkbLockModifiers)(display, 0x100, 0x2, 0);
         (xlib.XFlush)(display);
     })
-}
-
-#[cfg(target_os = "linux")]
-fn platform_restore() {
-    with_display(|xlib, display| unsafe {
-        (xlib.XkbLockModifiers)(display, 0x100, 0x2, 0x2);
-        (xlib.XFlush)(display);
-    });
 }
 
 #[cfg(target_os = "linux")]
