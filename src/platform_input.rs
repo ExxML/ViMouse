@@ -25,11 +25,9 @@ pub fn action_to_event_type(action: &Action, scroll_scale: f64) -> EventType {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub fn set_caps_lock_remap(enabled: bool) {
-    #[cfg(target_os = "macos")]
     macos_grab::set_caps_lock_remap_enabled(enabled);
-    #[cfg(not(target_os = "macos"))]
-    let _ = enabled;
 }
 
 pub fn shutdown_platform_input() {
@@ -476,10 +474,12 @@ impl PlatformEmitter {
             Action::ButtonRelease(rdev::Button::Right) => {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
-            _ => return simulate_input(
-                // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
-                &action_to_event_type(action, 16.0)
-            ),
+            _ => {
+                return simulate_input(
+                    // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
+                    &action_to_event_type(action, 16.0),
+                );
+            }
         };
 
         if matches!(action, Action::ButtonPress(_)) {
@@ -563,8 +563,10 @@ impl PlatformEmitter {
                     ),
                     Action::Scroll { delta_x, delta_y } => {
                         let mut result = 1;
-                        result &= emit_scroll_axis(xtest, self.display, delta_x.round() as i64, 6, 7);
-                        result &= emit_scroll_axis(xtest, self.display, delta_y.round() as i64, 5, 4);
+                        result &=
+                            emit_scroll_axis(xtest, self.display, delta_x.round() as i64, 6, 7);
+                        result &=
+                            emit_scroll_axis(xtest, self.display, delta_y.round() as i64, 5, 4);
                         result
                     }
                     Action::ButtonPress(button) => {

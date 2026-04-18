@@ -38,6 +38,7 @@ pub const KEY_SLOW: Key = Key::Alt;
 
 // Monitor cycling
 pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
+pub const KEY_TOGGLE_OVERLAY_GRID: Key = Key::ShiftRight;
 
 // Jump grid (5 columns × 3 rows, read left-to-right, top-to-bottom)
 // Row 0: Q  W  E  R  T

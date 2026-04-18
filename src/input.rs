@@ -1,11 +1,14 @@
 use crate::config::{
     FAST_MULTIPLIER, JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
     KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
-    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, MOVE_SPEED_PX_PER_SEC, SCROLL_SPEED_UNITS_PER_SEC,
-    SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_OVERLAY_GRID, MOVE_SPEED_PX_PER_SEC,
+    SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
+use crate::jump_grid::jump_target;
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
-use crate::platform_input::{set_caps_lock_remap, shutdown_platform_input, simulate_input, InputEmitter};
+#[cfg(target_os = "macos")]
+use crate::platform_input::set_caps_lock_remap;
+use crate::platform_input::{shutdown_platform_input, simulate_input, InputEmitter};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
@@ -157,6 +160,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
                 true
             } else if key == KEY_INSERT_MODE
                 || key == KEY_CYCLE_MONITOR
+                || key == KEY_TOGGLE_OVERLAY_GRID
                 || key == KEY_LEFT_CLICK
                 || key == KEY_RIGHT_CLICK
                 || is_jump_key(key)
@@ -213,6 +217,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
         KEY_INSERT_MODE => enter_insert_mode(state),
         KEY_NORMAL_MODE => {}
         KEY_CYCLE_MONITOR => cycle_monitor(state),
+        KEY_TOGGLE_OVERLAY_GRID => toggle_overlay_grid(state),
         KEY_LEFT_CLICK => press_mouse_button(state, Button::Left),
         KEY_RIGHT_CLICK => press_mouse_button(state, Button::Right),
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
@@ -251,6 +256,10 @@ fn cycle_monitor(state: &mut SharedState) {
     }
 
     state.selected_monitor = (state.selected_monitor + 1) % state.monitors.len();
+}
+
+fn toggle_overlay_grid(state: &mut SharedState) {
+    state.overlay_grid_enabled = !state.overlay_grid_enabled;
 }
 
 fn queue_jump(state: &mut SharedState, key: Key) {
@@ -462,26 +471,6 @@ fn movement_multiplier(keys: &HashSet<Key>) -> f64 {
     }
 
     multiplier
-}
-
-
-fn jump_target(monitor: crate::state::MonitorInfo, key: Key) -> Option<Point> {
-    for (row, keys) in JUMP_GRID.iter().enumerate() {
-        for (column, cell_key) in keys.iter().enumerate() {
-            if *cell_key != key {
-                continue;
-            }
-
-            let cell_width = monitor.width / JUMP_GRID[0].len() as f64;
-            let cell_height = monitor.height / JUMP_GRID.len() as f64;
-            return Some(Point {
-                x: monitor.origin.x + (column as f64 + 0.5) * cell_width,
-                y: monitor.origin.y + (row as f64 + 0.5) * cell_height,
-            });
-        }
-    }
-
-    None
 }
 
 fn emit_pending_key_events(tracker: &std::sync::Mutex<HookTracker>) {

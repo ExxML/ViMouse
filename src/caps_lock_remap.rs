@@ -198,9 +198,18 @@ pub fn caps_lock_used_in_config() -> bool {
     use crate::config::*;
     use rdev::Key;
     [
-        KEY_NORMAL_MODE, KEY_INSERT_MODE, KEY_SCROLL, KEY_FAST, KEY_SLOW,
-        KEY_LEFT_CLICK, KEY_RIGHT_CLICK, KEY_CYCLE_MONITOR,
-        KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE_RIGHT,
+        KEY_NORMAL_MODE,
+        KEY_INSERT_MODE,
+        KEY_SCROLL,
+        KEY_FAST,
+        KEY_SLOW,
+        KEY_LEFT_CLICK,
+        KEY_RIGHT_CLICK,
+        KEY_CYCLE_MONITOR,
+        KEY_MOVE_LEFT,
+        KEY_MOVE_DOWN,
+        KEY_MOVE_UP,
+        KEY_MOVE_RIGHT,
     ]
     .contains(&Key::CapsLock)
         || KEYS_QUIT.contains(&Key::CapsLock)
