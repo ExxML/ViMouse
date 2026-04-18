@@ -1,3 +1,6 @@
+// macOS only. Remaps Caps Lock → F18 at the IOKit HID level so the OS delivers it as a normal
+// KeyDown event instead of FlagsChanged, allowing ViMouse to intercept it like any other key.
+// Restored on exit or panic.
 use core_foundation::{
     array::CFArray,
     base::{CFRelease, CFType, CFTypeRef, TCFType},

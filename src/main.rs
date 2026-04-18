@@ -2,6 +2,8 @@
 
 #[cfg(target_os = "macos")]
 mod caps_lock_remap;
+#[cfg(not(target_os = "macos"))]
+mod caps_lock_suppress;
 mod config;
 mod input;
 mod jump_grid;
@@ -30,7 +32,19 @@ fn main() {
         std::process::exit(1);
     }
 
+    #[cfg(not(target_os = "macos"))]
+    {
+        crate::caps_lock_suppress::suppress();
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            crate::caps_lock_suppress::restore();
+            prev_hook(info);
+        }));
+    }
+
     ctrlc::set_handler(|| {
+        #[cfg(not(target_os = "macos"))]
+        crate::caps_lock_suppress::restore();
         shutdown_platform_input();
         std::process::exit(0);
     })
