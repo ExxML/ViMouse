@@ -6,17 +6,16 @@ mod caps_lock_remap;
 mod caps_lock_suppress;
 mod config;
 mod input;
-mod jump_grid;
 mod monitor;
-mod overlay_window;
+mod overlay_icon;
 mod platform_input;
 mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
-use crate::overlay_window::{
-    create_event_loop, create_pixels, create_window, current_overlay_state, paint_overlay,
-    show_overlay_window,
+use crate::overlay_icon::{
+    create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
+    show_overlay_icon_window,
 };
 use crate::platform_input::shutdown_platform_input;
 use crate::state::{Action, SharedState};
@@ -71,31 +70,31 @@ fn main() {
     spawn_input_hook(Arc::clone(&shared));
     spawn_motion_loop(Arc::clone(&shared));
 
-    // Paint once before showing the overlay window to avoid a blank startup flash.
+    // Paint once before showing the overlay icon to avoid a blank startup flash.
     let mut pixels = create_pixels(&window);
-    let mut last_overlay = current_overlay_state(&shared);
-    if let Err(error) = paint_overlay(&window, &mut pixels, &last_overlay) {
-        eprintln!("initial overlay render error: {error}");
+    let mut last_overlay_icon = current_overlay_icon(&shared);
+    if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
+        eprintln!("initial overlay icon render error: {error}");
         shutdown_platform_input();
         return;
     }
-    show_overlay_window(&window);
+    show_overlay_icon_window(&window);
 
     event_loop.run(move |event, _, control_flow| {
-        // The overlay only changes when the mode, monitor, or grid toggle changes.
+        // The overlay icon only changes when the mode or focused monitor changes.
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(33));
 
         match event {
             WinitEvent::MainEventsCleared => {
-                let overlay = current_overlay_state(&shared);
-                if last_overlay != overlay {
+                let overlay_icon = current_overlay_icon(&shared);
+                if last_overlay_icon != overlay_icon {
                     window.request_redraw();
-                    last_overlay = overlay;
+                    last_overlay_icon = overlay_icon;
                 }
             }
             WinitEvent::RedrawRequested(_) => {
-                if let Err(error) = paint_overlay(&window, &mut pixels, &last_overlay) {
-                    eprintln!("overlay render error: {error}");
+                if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
+                    eprintln!("overlay icon render error: {error}");
                     shutdown_platform_input();
                     *control_flow = ControlFlow::Exit;
                 }
