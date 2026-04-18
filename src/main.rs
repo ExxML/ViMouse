@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+#[cfg(target_os = "macos")]
+mod caps_lock_remap;
 mod input;
 mod monitor;
 mod overlay_icon;
@@ -13,6 +15,7 @@ use crate::overlay_icon::{
     create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
     show_overlay_icon_window,
 };
+use crate::platform_input::shutdown_platform_input;
 use crate::state::{Action, SharedState};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,6 +28,12 @@ fn main() {
         eprintln!("Accessibility permission required. Grant access in System Settings → Privacy & Security → Accessibility, then relaunch.");
         std::process::exit(1);
     }
+
+    ctrlc::set_handler(|| {
+        shutdown_platform_input();
+        std::process::exit(0);
+    })
+    .expect("failed to set Ctrl+C handler");
 
     let event_loop = create_event_loop();
     let window = create_window(&event_loop);
@@ -50,6 +59,7 @@ fn main() {
     let mut last_overlay_icon = current_overlay_icon(&shared);
     if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
         eprintln!("initial overlay icon render error: {error}");
+        shutdown_platform_input();
         return;
     }
     show_overlay_icon_window(&window);
@@ -69,6 +79,7 @@ fn main() {
             WinitEvent::RedrawRequested(_) => {
                 if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
                     eprintln!("overlay icon render error: {error}");
+                    shutdown_platform_input();
                     *control_flow = ControlFlow::Exit;
                 }
             }
@@ -76,6 +87,7 @@ fn main() {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
+                shutdown_platform_input();
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}

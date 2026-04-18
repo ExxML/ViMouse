@@ -9,6 +9,7 @@ identifier = "io.github.exxml.vimouse"
 category = "Utility"
 
 [dependencies]
+ctrlc = "3"
 font8x8 = "0.3"
 pixels = "0.13"
 rdev = { version = "0.5", features = ["unstable_grab"] }

@@ -5,7 +5,7 @@ use crate::config::{
     SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
-use crate::platform_input::{simulate_input, InputEmitter};
+use crate::platform_input::{set_caps_lock_remap, shutdown_platform_input, simulate_input, InputEmitter};
 use crate::state::{Action, Mode, Point, Shared, SharedState};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
@@ -32,9 +32,15 @@ pub fn spawn_input_hook(shared: Shared) {
             let tracker = std::sync::Mutex::new(HookTracker::default());
 
             #[cfg(target_os = "macos")]
-            crate::platform_input::macos_grab::run(move |event| {
-                handle_hook_event(&shared, &tracker, event)
-            });
+            {
+                if crate::caps_lock_remap::caps_lock_used_in_config() {
+                    set_caps_lock_remap(true);
+                }
+                crate::platform_input::macos_grab::run(move |event| {
+                    handle_hook_event(&shared, &tracker, event)
+                });
+                shutdown_platform_input();
+            }
 
             #[cfg(not(target_os = "macos"))]
             if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, event)) {
@@ -133,6 +139,7 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
     }
 
     if quit_chord_active(&tracker.held_keys, key) {
+        shutdown_platform_input();
         std::process::exit(0);
     }
 

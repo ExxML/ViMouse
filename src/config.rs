@@ -19,7 +19,7 @@ pub const OVERLAY_ICON_SIZE_MONITOR_FRACTION: f64 = 0.044;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
-pub const KEY_NORMAL_MODE: Key = Key::Escape; // Recommend using a non-text key
+pub const KEY_NORMAL_MODE: Key = Key::CapsLock; // Recommend using a non-text key
 
 // Cursor movement keys
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;
