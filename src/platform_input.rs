@@ -101,7 +101,6 @@ pub mod macos_grab {
     ) -> *mut c_void {
         match event_type {
             CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
-                CAPS_LOCK_KEY_DOWN = false;
                 CGEventTapEnable(TAP_REF, true);
                 return raw_event;
             }

@@ -36,6 +36,7 @@ pub fn spawn_input_hook(shared: Shared) {
             #[cfg(target_os = "macos")]
             {
                 if crate::caps_lock_remap::caps_lock_used_in_config() {
+                    crate::caps_lock_remap::turn_off_caps_lock();
                     set_caps_lock_remap(true);
                 }
                 crate::platform_input::macos_grab::run(move |event| {
@@ -594,7 +595,10 @@ fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
 
 fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
     tracker.held_keys.iter().any(|held_key| {
-        *held_key != key && !is_modifier_key(*held_key) && !tracker.captured_keys.contains(held_key)
+        *held_key != key
+            && !is_modifier_key(*held_key)
+            && *held_key != Key::CapsLock
+            && !tracker.captured_keys.contains(held_key)
     })
 }
 

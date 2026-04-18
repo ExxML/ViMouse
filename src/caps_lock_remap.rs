@@ -27,6 +27,11 @@ pub static CAPS_LOCK_REMAP_ACTIVE: AtomicBool = AtomicBool::new(false);
 static REMAPPER: OnceLock<Mutex<CapsLockRemapper>> = OnceLock::new();
 static ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
+type IOReturn = i32;
+type IOConnect = u32;
+const KERN_SUCCESS: IOReturn = 0;
+const IO_HID_CAPS_LOCK_STATE: i32 = 1;
+
 #[link(name = "IOKit", kind = "framework")]
 extern "C" {
     fn IOHIDEventSystemClientCreateSimpleClient(
@@ -41,6 +46,12 @@ extern "C" {
         client: IOHIDEventSystemClientRef,
         key: CFStringRef,
     ) -> CFTypeRef;
+    fn IORegistryEntryFromPath(master_port: u32, path: *const i8) -> u32;
+    fn IOServiceOpen(service: u32, owning_task: u32, connect_type: u32, connect: *mut IOConnect) -> IOReturn;
+    fn IOServiceClose(connect: IOConnect) -> IOReturn;
+    fn IOObjectRelease(object: u32) -> IOReturn;
+    fn IOHIDSetModifierLockState(handle: IOConnect, selector: i32, state: bool) -> IOReturn;
+    fn mach_task_self() -> u32;
 }
 
 struct CapsLockRemapper {
@@ -195,6 +206,29 @@ pub fn set_enabled(enabled: bool) {
 
 pub fn shutdown() {
     set_enabled(false);
+}
+
+pub fn turn_off_caps_lock() {
+    unsafe {
+        // kIOHIDParamConnectType = 1, kIOMasterPortDefault = 0
+        const IO_HID_PARAM_CONNECT_TYPE: u32 = 1;
+
+        let path = b"IOService:/IOResources/IOHIDSystem\0";
+        let service = IORegistryEntryFromPath(0, path.as_ptr() as *const i8);
+        if service == 0 {
+            return;
+        }
+
+        let mut connect: IOConnect = 0;
+        let kr = IOServiceOpen(service, mach_task_self(), IO_HID_PARAM_CONNECT_TYPE, &mut connect);
+        IOObjectRelease(service);
+        if kr != KERN_SUCCESS {
+            return;
+        }
+
+        IOHIDSetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, false);
+        IOServiceClose(connect);
+    }
 }
 
 pub fn caps_lock_used_in_config() -> bool {
