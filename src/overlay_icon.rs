@@ -1,4 +1,4 @@
-use crate::config::{OverlayPos, OVERLAY_CORNER, OVERLAY_SIZE_MONITOR_FRACTION};
+use crate::config::{OverlayIconPos, OVERLAY_ICON_POSITION, OVERLAY_ICON_SIZE_MONITOR_FRACTION};
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
@@ -19,7 +19,7 @@ use winit::platform::x11::{
 use winit::window::{Window, WindowBuilder, WindowLevel};
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct OverlayState {
+pub struct OverlayIconState {
     pub mode: Mode,
     pub monitor: MonitorInfo,
 }
@@ -61,7 +61,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
     window
 }
 
-pub fn show_overlay_window(window: &Window) {
+pub fn show_overlay_icon_window(window: &Window) {
     window.set_visible(true);
     finalize_overlay_window(window);
 }
@@ -72,10 +72,10 @@ pub fn create_pixels(window: &Window) -> Pixels {
     Pixels::new(window_size.width, window_size.height, surface).expect("pixels init failed")
 }
 
-// Snapshot just the overlay-relevant state so the UI code stays simple.
-pub fn current_overlay(shared: &Shared) -> OverlayState {
+// Snapshot just the overlay icon-relevant state so the UI code stays simple.
+pub fn current_overlay_icon(shared: &Shared) -> OverlayIconState {
     let state = shared.lock().expect("shared state poisoned");
-    OverlayState {
+    OverlayIconState {
         mode: state.mode,
         monitor: state
             .monitors
@@ -85,11 +85,11 @@ pub fn current_overlay(shared: &Shared) -> OverlayState {
     }
 }
 
-// Overlay painting is intentionally tiny: move the window, draw the square, present it.
-pub fn paint_overlay(
+// Overlay icon painting is intentionally tiny: move the window, draw the square, present it.
+pub fn paint_overlay_icon(
     window: &Window,
     pixels: &mut Pixels,
-    overlay: &OverlayState,
+    overlay: &OverlayIconState,
 ) -> Result<(), Error> {
     let overlay_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
     position_overlay(window, &overlay.monitor);
@@ -98,7 +98,7 @@ pub fn paint_overlay(
 }
 
 fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
-    (monitor.width.min(monitor.height) * OVERLAY_SIZE_MONITOR_FRACTION)
+    (monitor.width.min(monitor.height) * OVERLAY_ICON_SIZE_MONITOR_FRACTION)
         .round()
         .max(1.0) as u32
 }
@@ -147,15 +147,15 @@ fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size:
 #[cfg(target_os = "macos")]
 fn position_overlay(window: &Window, monitor: &MonitorInfo) {
     let overlay_size = window.outer_size().to_logical::<f64>(monitor.scale_factor);
-    let x = match OVERLAY_CORNER {
-        OverlayPos::TopLeft | OverlayPos::BottomLeft => monitor.origin.x,
-        OverlayPos::TopRight | OverlayPos::BottomRight => {
+    let x = match OVERLAY_ICON_POSITION {
+        OverlayIconPos::TopLeft | OverlayIconPos::BottomLeft => monitor.origin.x,
+        OverlayIconPos::TopRight | OverlayIconPos::BottomRight => {
             monitor.origin.x + monitor.width - overlay_size.width
         }
     };
-    let y = match OVERLAY_CORNER {
-        OverlayPos::TopLeft | OverlayPos::TopRight => monitor.origin.y,
-        OverlayPos::BottomLeft | OverlayPos::BottomRight => {
+    let y = match OVERLAY_ICON_POSITION {
+        OverlayIconPos::TopLeft | OverlayIconPos::TopRight => monitor.origin.y,
+        OverlayIconPos::BottomLeft | OverlayIconPos::BottomRight => {
             monitor.origin.y + monitor.height - overlay_size.height
         }
     };
@@ -165,15 +165,15 @@ fn position_overlay(window: &Window, monitor: &MonitorInfo) {
 #[cfg(not(target_os = "macos"))]
 fn position_overlay(window: &Window, monitor: &MonitorInfo) {
     let overlay_size = window.outer_size();
-    let x = match OVERLAY_CORNER {
-        OverlayPos::TopLeft | OverlayPos::BottomLeft => monitor.origin.x,
-        OverlayPos::TopRight | OverlayPos::BottomRight => {
+    let x = match OVERLAY_ICON_POSITION {
+        OverlayIconPos::TopLeft | OverlayIconPos::BottomLeft => monitor.origin.x,
+        OverlayIconPos::TopRight | OverlayIconPos::BottomRight => {
             monitor.origin.x + monitor.width - overlay_size.width as f64
         }
     };
-    let y = match OVERLAY_CORNER {
-        OverlayPos::TopLeft | OverlayPos::TopRight => monitor.origin.y,
-        OverlayPos::BottomLeft | OverlayPos::BottomRight => {
+    let y = match OVERLAY_ICON_POSITION {
+        OverlayIconPos::TopLeft | OverlayIconPos::TopRight => monitor.origin.y,
+        OverlayIconPos::BottomLeft | OverlayIconPos::BottomRight => {
             monitor.origin.y + monitor.height - overlay_size.height as f64
         }
     };

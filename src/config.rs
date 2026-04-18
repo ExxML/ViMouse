@@ -1,21 +1,21 @@
 use rdev::Key;
 
 #[allow(dead_code)]
-pub enum OverlayPos {
+pub enum OverlayIconPos {
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
 }
 
-pub const OVERLAY_CORNER: OverlayPos = OverlayPos::BottomLeft;
+pub const OVERLAY_ICON_POSITION: OverlayIconPos = OverlayIconPos::BottomLeft;
 
 pub const MOVE_SPEED_PX_PER_SEC: f64 = 800.0;
 pub const SCROLL_SPEED_UNITS_PER_SEC: f64 = 25.0;
 pub const FAST_MULTIPLIER: f64 = 2.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
 pub const TICK_RATE_HZ: u64 = 240;
-pub const OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044;
+pub const OVERLAY_ICON_SIZE_MONITOR_FRACTION: f64 = 0.044;
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
