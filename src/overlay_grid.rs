@@ -244,7 +244,7 @@ impl GridSurfaceImp {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
-            power_preference: wgpu::PowerPreference::None,
+            power_preference: wgpu::PowerPreference::default(),
         }))
         .expect("grid wgpu adapter not found");
 
