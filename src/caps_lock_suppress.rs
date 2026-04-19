@@ -18,7 +18,7 @@ pub fn suppress() {
 #[cfg(target_os = "windows")]
 fn platform_suppress() -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, KEYEVENTF_KEYUP, VK_CAPITAL, keybd_event,
+        keybd_event, GetKeyState, KEYEVENTF_KEYUP, VK_CAPITAL,
     };
     unsafe {
         // If Caps Lock is currently on, send a key press+release to toggle it off.

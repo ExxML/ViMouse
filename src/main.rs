@@ -14,7 +14,7 @@ mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
-use crate::overlay_grid::{GridSurface, create_grid_window, current_grid_state};
+use crate::overlay_grid::{create_grid_window, current_grid_state, GridSurface};
 use crate::overlay_icon::{
     create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
     show_overlay_icon_window,
@@ -99,8 +99,7 @@ fn main() {
             }
             WinitEvent::RedrawRequested(window_id) => {
                 if window_id == window.id() {
-                    if let Err(error) =
-                        paint_overlay_icon(&window, &mut pixels, &last_overlay_icon)
+                    if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon)
                     {
                         eprintln!("overlay icon render error: {error}");
                         shutdown_platform_input();

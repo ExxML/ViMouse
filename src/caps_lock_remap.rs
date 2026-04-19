@@ -49,7 +49,12 @@ extern "C" {
         key: CFStringRef,
     ) -> CFTypeRef;
     fn IORegistryEntryFromPath(master_port: u32, path: *const i8) -> u32;
-    fn IOServiceOpen(service: u32, owning_task: u32, connect_type: u32, connect: *mut IOConnect) -> IOReturn;
+    fn IOServiceOpen(
+        service: u32,
+        owning_task: u32,
+        connect_type: u32,
+        connect: *mut IOConnect,
+    ) -> IOReturn;
     fn IOServiceClose(connect: IOConnect) -> IOReturn;
     fn IOObjectRelease(object: u32) -> IOReturn;
     fn IOHIDSetModifierLockState(handle: IOConnect, selector: i32, state: bool) -> IOReturn;
@@ -222,7 +227,12 @@ pub fn turn_off_caps_lock() {
         }
 
         let mut connect: IOConnect = 0;
-        let kr = IOServiceOpen(service, mach_task_self(), IO_HID_PARAM_CONNECT_TYPE, &mut connect);
+        let kr = IOServiceOpen(
+            service,
+            mach_task_self(),
+            IO_HID_PARAM_CONNECT_TYPE,
+            &mut connect,
+        );
         IOObjectRelease(service);
         if kr != KERN_SUCCESS {
             return;
@@ -232,4 +242,3 @@ pub fn turn_off_caps_lock() {
         IOServiceClose(connect);
     }
 }
-
