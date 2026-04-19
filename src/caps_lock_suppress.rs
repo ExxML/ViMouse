@@ -4,27 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
-pub fn caps_lock_used_in_config() -> bool {
-    use crate::config::*;
-    use rdev::Key;
-    [
-        KEY_NORMAL_MODE,
-        KEY_INSERT_MODE,
-        KEY_SCROLL,
-        KEY_FAST,
-        KEY_SLOW,
-        KEY_LEFT_CLICK,
-        KEY_RIGHT_CLICK,
-        KEY_CYCLE_MONITOR,
-        KEY_MOVE_LEFT,
-        KEY_MOVE_DOWN,
-        KEY_MOVE_UP,
-        KEY_MOVE_RIGHT,
-    ]
-    .contains(&Key::CapsLock)
-        || KEYS_QUIT.contains(&Key::CapsLock)
-        || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
-}
+pub use crate::input::caps_lock_used_in_config;
 
 pub fn suppress() {
     if !caps_lock_used_in_config() || SUPPRESSED.load(Ordering::Acquire) {

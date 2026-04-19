@@ -15,6 +15,8 @@ use std::sync::{
     Mutex, OnceLock,
 };
 
+pub use crate::input::caps_lock_used_in_config;
+
 type IOHIDEventSystemClientRef = *mut c_void;
 
 const HID_USAGE_PREFIX: i64 = 0x700000000;
@@ -231,24 +233,3 @@ pub fn turn_off_caps_lock() {
     }
 }
 
-pub fn caps_lock_used_in_config() -> bool {
-    use crate::config::*;
-    use rdev::Key;
-    [
-        KEY_NORMAL_MODE,
-        KEY_INSERT_MODE,
-        KEY_SCROLL,
-        KEY_FAST,
-        KEY_SLOW,
-        KEY_LEFT_CLICK,
-        KEY_RIGHT_CLICK,
-        KEY_CYCLE_MONITOR,
-        KEY_MOVE_LEFT,
-        KEY_MOVE_DOWN,
-        KEY_MOVE_UP,
-        KEY_MOVE_RIGHT,
-    ]
-    .contains(&Key::CapsLock)
-        || KEYS_QUIT.contains(&Key::CapsLock)
-        || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
-}
