@@ -68,7 +68,8 @@ fn main() {
 
     // Paint once before showing the overlay icon to avoid a blank startup flash.
     let mut pixels = create_pixels(&window);
-    let mut grid_surface = GridSurface::new(&grid_window);
+    let initial_monitor = shared.lock().expect("shared state poisoned").monitors[0];
+    let mut grid_surface = GridSurface::new(&grid_window, &initial_monitor);
     let mut last_overlay_icon = current_overlay_icon(&shared);
     let mut last_grid_state = current_grid_state(&shared);
 
