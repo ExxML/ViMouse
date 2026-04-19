@@ -524,7 +524,7 @@ impl PlatformEmitter {
             }
             Action::Scroll { delta_x, delta_y } => {
                 use core_graphics::event::ScrollEventUnit;
-                // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
+                // 16.0 scales ViMouse scroll units to macOS pixel scroll units.
                 const PIXELS_PER_UNIT: f64 = 16.0;
                 let px_y = (delta_y * PIXELS_PER_UNIT).round() as i32;
                 let px_x = (delta_x * PIXELS_PER_UNIT).round() as i32;
