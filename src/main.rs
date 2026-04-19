@@ -97,6 +97,14 @@ fn main() {
                     grid_surface.update(&grid_window, &last_grid_state);
                 }
             }
+            WinitEvent::WindowEvent {
+                window_id,
+                event: WindowEvent::Resized(_),
+            } if window_id == grid_window.id() => {
+                if last_grid_state.visible {
+                    grid_surface.update(&grid_window, &last_grid_state);
+                }
+            }
             WinitEvent::RedrawRequested(window_id) => {
                 if window_id == window.id() {
                     if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon)

@@ -64,6 +64,7 @@ impl GridSurface {
         window.set_visible(true);
         self.imp.paint(window, w, h);
     }
+
 }
 
 // ── Windows implementation ───────────────────────────────────────────────────
@@ -175,6 +176,21 @@ impl GridSurfaceImp {
     }
 }
 
+fn axis_line_centers(length: usize, cells: usize) -> impl Iterator<Item = usize> {
+    // Draw starting/closing edges along with the interior dividers so the grid is framed.
+    std::iter::once(0).chain(
+        (1..cells)
+            .map(move |i| i * length / cells)
+            .chain(std::iter::once(length.saturating_sub(1))),
+    )
+}
+
+fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
+    let start = center.saturating_sub(LINE_THICKNESS / 2);
+    let end = (start + LINE_THICKNESS).min(length);
+    start..end
+}
+
 // Fill pre-multiplied ARGB pixels for the grid lines (Windows DIB order: 0xAARRGGBB).
 #[cfg(target_os = "windows")]
 fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize) {
@@ -182,22 +198,16 @@ fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize) {
     let pm = (LINE_GREY as u32 * LINE_ALPHA as u32) / 255;
     let line_pixel: u32 = ((LINE_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
 
-    for col in 1..GRID_COLS {
-        let x_center = col * w / GRID_COLS;
-        let x_start = x_center.saturating_sub(LINE_THICKNESS / 2);
-        let x_end = (x_start + LINE_THICKNESS).min(w);
+    for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
-            for x in x_start..x_end {
+            for x in line_range(x_center, w) {
                 pixels[y * w + x] = line_pixel;
             }
         }
     }
 
-    for row in 1..GRID_ROWS {
-        let y_center = row * h / GRID_ROWS;
-        let y_start = y_center.saturating_sub(LINE_THICKNESS / 2);
-        let y_end = (y_start + LINE_THICKNESS).min(h);
-        for y in y_start..y_end {
+    for y_center in axis_line_centers(h, GRID_ROWS) {
+        for y in line_range(y_center, h) {
             for x in 0..w {
                 pixels[y * w + x] = line_pixel;
             }
@@ -471,12 +481,9 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
     for chunk in frame.chunks_exact_mut(4) {
         chunk.copy_from_slice(&[0, 0, 0, 0]);
     }
-    for col in 1..GRID_COLS {
-        let x_center = col * w / GRID_COLS;
-        let x_start = x_center.saturating_sub(LINE_THICKNESS / 2);
-        let x_end = (x_start + LINE_THICKNESS).min(w);
+    for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
-            for x in x_start..x_end {
+            for x in line_range(x_center, w) {
                 let i = (y * w + x) * 4;
                 frame[i] = LINE_GREY;
                 frame[i + 1] = LINE_GREY;
@@ -485,11 +492,8 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
             }
         }
     }
-    for row in 1..GRID_ROWS {
-        let y_center = row * h / GRID_ROWS;
-        let y_start = y_center.saturating_sub(LINE_THICKNESS / 2);
-        let y_end = (y_start + LINE_THICKNESS).min(h);
-        for y in y_start..y_end {
+    for y_center in axis_line_centers(h, GRID_ROWS) {
+        for y in line_range(y_center, h) {
             for x in 0..w {
                 let i = (y * w + x) * 4;
                 frame[i] = LINE_GREY;
