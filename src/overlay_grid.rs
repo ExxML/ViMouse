@@ -226,7 +226,6 @@ struct GridSurfaceImp {
 #[cfg(not(target_os = "windows"))]
 impl GridSurfaceImp {
     fn new(window: &Window) -> Self {
-        use wgpu::util::DeviceExt;
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -239,7 +238,7 @@ impl GridSurfaceImp {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
-            power_preference: wgpu::PowerPreference::None,
+            power_preference: wgpu::PowerPreference::default(),
         }))
         .expect("grid wgpu adapter not found");
 
