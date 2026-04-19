@@ -61,6 +61,7 @@ pub fn spawn_motion_loop(shared: Shared) {
             let frame_time = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);
             let mut last_tick = Instant::now();
             let mut next_tick = last_tick + frame_time;
+            let mut scroll_accum = ScrollAccum::default();
 
             loop {
                 // Drive movement from elapsed time instead of key-repeat cadence so hold-to-move
@@ -72,7 +73,7 @@ pub fn spawn_motion_loop(shared: Shared) {
                     .min(0.050);
                 last_tick = now;
 
-                let actions = collect_pending_actions(&shared, delta_seconds);
+                let actions = collect_pending_actions(&shared, delta_seconds, &mut scroll_accum);
                 emitter.emit_all(&actions);
 
                 let now = Instant::now();
@@ -85,6 +86,12 @@ pub fn spawn_motion_loop(shared: Shared) {
             }
         })
         .expect("failed to spawn motion loop thread");
+}
+
+#[derive(Default)]
+struct ScrollAccum {
+    x: f64,
+    y: f64,
 }
 
 fn handle_hook_event(
@@ -374,7 +381,11 @@ fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTrac
     }
 }
 
-fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
+fn collect_pending_actions(
+    shared: &Shared,
+    delta_seconds: f64,
+    scroll_accum: &mut ScrollAccum,
+) -> Vec<Action> {
     let mut state = shared.lock().expect("shared state poisoned");
     // The hook thread only mutates state; all synthetic mouse output is emitted here so
     // cursor movement, clicks, and scrolling stay serialized and predictable.
@@ -382,11 +393,15 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     actions.append(&mut state.pending_actions);
 
     if state.mode != Mode::Normal {
+        scroll_accum.x = 0.0;
+        scroll_accum.y = 0.0;
         return actions;
     }
 
     let direction = normalized_direction(&state.pressed_keys);
     if direction.x == 0.0 && direction.y == 0.0 {
+        scroll_accum.x = 0.0;
+        scroll_accum.y = 0.0;
         return actions;
     }
 
@@ -396,13 +411,26 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     };
 
     if scroll_mode_active(&state.pressed_keys) {
-        let delta_x = -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
-        let delta_y = -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        scroll_accum.x += -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        scroll_accum.y += -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
 
-        actions.push(Action::Scroll { delta_x, delta_y });
+        let emit_x = scroll_accum.x.trunc();
+        let emit_y = scroll_accum.y.trunc();
+        scroll_accum.x -= emit_x;
+        scroll_accum.y -= emit_y;
+
+        if emit_x != 0.0 || emit_y != 0.0 {
+            actions.push(Action::Scroll {
+                delta_x: emit_x,
+                delta_y: emit_y,
+            });
+        }
 
         return actions;
     }
+
+    scroll_accum.x = 0.0;
+    scroll_accum.y = 0.0;
 
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
