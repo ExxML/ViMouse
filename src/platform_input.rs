@@ -417,7 +417,14 @@ impl PlatformEmitter {
     }
 
     fn emit(&mut self, action: &Action) -> Result<(), String> {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+            SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL, MOUSEINPUT,
+        };
         use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+        // Win32 defines one scroll notch as 120 mouseData units; apps accumulate and act per 120,
+        // so sending sub-120 values each tick enables smooth high-resolution scrolling.
+        const WHEEL_DELTA: f64 = 120.0;
 
         match action {
             Action::MouseMove(point) => unsafe {
@@ -426,6 +433,48 @@ impl PlatformEmitter {
                 } else {
                     Ok(())
                 }
+            },
+            Action::Scroll { delta_x, delta_y } => unsafe {
+                let mut result = Ok(());
+                if *delta_y != 0.0 {
+                    let data = (delta_y * WHEEL_DELTA).round() as i32 as u32;
+                    let input = INPUT {
+                        r#type: INPUT_MOUSE,
+                        Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                            mi: MOUSEINPUT {
+                                dx: 0,
+                                dy: 0,
+                                mouseData: data,
+                                dwFlags: MOUSEEVENTF_WHEEL,
+                                time: 0,
+                                dwExtraInfo: 0,
+                            },
+                        },
+                    };
+                    if SendInput(1, &input, std::mem::size_of::<INPUT>() as i32) != 1 {
+                        result = Err("SendInput scroll Y failed".to_string());
+                    }
+                }
+                if *delta_x != 0.0 {
+                    let data = (delta_x * WHEEL_DELTA).round() as i32 as u32;
+                    let input = INPUT {
+                        r#type: INPUT_MOUSE,
+                        Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                            mi: MOUSEINPUT {
+                                dx: 0,
+                                dy: 0,
+                                mouseData: data,
+                                dwFlags: MOUSEEVENTF_HWHEEL,
+                                time: 0,
+                                dwExtraInfo: 0,
+                            },
+                        },
+                    };
+                    if SendInput(1, &input, std::mem::size_of::<INPUT>() as i32) != 1 {
+                        result = Err("SendInput scroll X failed".to_string());
+                    }
+                }
+                result
             },
             _ => simulate_input(&action_to_event_type(action, 1.0)),
         }
@@ -473,11 +522,26 @@ impl PlatformEmitter {
             Action::ButtonRelease(rdev::Button::Right) => {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
+            Action::Scroll { delta_x, delta_y } => {
+                use core_graphics::event::ScrollEventUnit;
+                // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
+                const PIXELS_PER_UNIT: f64 = 16.0;
+                let px_y = (delta_y * PIXELS_PER_UNIT).round() as i32;
+                let px_x = (delta_x * PIXELS_PER_UNIT).round() as i32;
+                let event = CGEvent::new_scroll_event(
+                    self.source.clone(),
+                    ScrollEventUnit::PIXEL,
+                    2,
+                    px_y,
+                    px_x,
+                    0,
+                )
+                .map_err(|_| "CGEvent scroll creation failed".to_string())?;
+                event.post(core_graphics::event::CGEventTapLocation::HID);
+                return Ok(());
+            }
             _ => {
-                return simulate_input(
-                    // 16.0 is an arbitrary multiplier on mac to feel equivalent to scrolling on other platforms
-                    &action_to_event_type(action, 16.0),
-                );
+                return simulate_input(&action_to_event_type(action, 1.0));
             }
         };
 
@@ -511,6 +575,8 @@ struct PlatformEmitter {
     xlib: Option<x11_dl::xlib::Xlib>,
     xtest: Option<x11_dl::xtest::Xf86vmode>,
     display: *mut x11_dl::xlib::Display,
+    scroll_accum_x: f64,
+    scroll_accum_y: f64,
 }
 
 #[cfg(target_os = "linux")]
@@ -523,6 +589,8 @@ impl PlatformEmitter {
                 xlib: None,
                 xtest: None,
                 display: ptr::null_mut(),
+                scroll_accum_x: 0.0,
+                scroll_accum_y: 0.0,
             };
         };
         let Ok(xtest) = x11_dl::xtest::Xf86vmode::open() else {
@@ -530,6 +598,8 @@ impl PlatformEmitter {
                 xlib: None,
                 xtest: None,
                 display: ptr::null_mut(),
+                scroll_accum_x: 0.0,
+                scroll_accum_y: 0.0,
             };
         };
 
@@ -539,6 +609,8 @@ impl PlatformEmitter {
                 xlib: None,
                 xtest: None,
                 display,
+                scroll_accum_x: 0.0,
+                scroll_accum_y: 0.0,
             };
         }
 
@@ -546,6 +618,8 @@ impl PlatformEmitter {
             xlib: Some(xlib),
             xtest: Some(xtest),
             display,
+            scroll_accum_x: 0.0,
+            scroll_accum_y: 0.0,
         }
     }
 
@@ -561,11 +635,19 @@ impl PlatformEmitter {
                         0,
                     ),
                     Action::Scroll { delta_x, delta_y } => {
+                        self.scroll_accum_x += delta_x;
+                        self.scroll_accum_y += delta_y;
+                        let clicks_x = self.scroll_accum_x.trunc() as i64;
+                        let clicks_y = self.scroll_accum_y.trunc() as i64;
+                        self.scroll_accum_x -= clicks_x as f64;
+                        self.scroll_accum_y -= clicks_y as f64;
                         let mut result = 1;
-                        result &=
-                            emit_scroll_axis(xtest, self.display, delta_x.round() as i64, 6, 7);
-                        result &=
-                            emit_scroll_axis(xtest, self.display, delta_y.round() as i64, 5, 4);
+                        if clicks_x != 0 {
+                            result &= emit_scroll_axis(xtest, self.display, clicks_x, 6, 7);
+                        }
+                        if clicks_y != 0 {
+                            result &= emit_scroll_axis(xtest, self.display, clicks_y, 5, 4);
+                        }
                         result
                     }
                     Action::ButtonPress(button) => {
