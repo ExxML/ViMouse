@@ -1,7 +1,26 @@
 use crate::state::Action;
+#[cfg(target_os = "macos")]
+use core_graphics::event::{
+    CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
+};
+#[cfg(target_os = "macos")]
+use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 #[cfg(target_os = "linux")]
 use rdev::Button;
 use rdev::{simulate, EventType};
+#[cfg(target_os = "linux")]
+use std::os::raw::{c_int, c_uint, c_ulong};
+#[cfg(target_os = "linux")]
+use std::ptr;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL,
+    MOUSEINPUT, VK_LBUTTON, VK_RBUTTON,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+#[cfg(target_os = "linux")]
+use x11_dl::xlib::Xlib;
 
 static SIMULATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -40,9 +59,6 @@ pub fn shutdown_platform_input() {
 pub fn mouse_button_is_down(button: rdev::Button) -> bool {
     #[cfg(target_os = "windows")]
     {
-        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-            GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
-        };
         let vk = match button {
             rdev::Button::Left => VK_LBUTTON,
             rdev::Button::Right => VK_RBUTTON,
@@ -54,7 +70,6 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
 
     #[cfg(target_os = "macos")]
     {
-        use core_graphics::event_source::CGEventSourceStateID;
         #[link(name = "CoreGraphics", kind = "framework")]
         extern "C" {
             fn CGEventSourceButtonState(state_id: CGEventSourceStateID, button: u32) -> bool;
@@ -69,10 +84,6 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
 
     #[cfg(target_os = "linux")]
     {
-        use std::os::raw::{c_int, c_uint, c_ulong};
-        use std::ptr;
-        use x11_dl::xlib::Xlib;
-
         let mask: c_uint = match button {
             rdev::Button::Left => 1 << 8,   // Button1Mask
             rdev::Button::Right => 1 << 10, // Button3Mask
@@ -112,9 +123,14 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
 #[cfg(target_os = "macos")]
 pub mod macos_grab {
     use crate::caps_lock_remap;
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::string::CFString;
     use core_graphics::event::{CGEventFlags, CGEventTapProxy, CGEventType};
     use rdev::{Button, Event, EventType, Key};
     use std::os::raw::c_void;
+    use std::sync::atomic::Ordering;
     use std::time::SystemTime;
 
     type GrabCallback = Box<dyn FnMut(Event) -> Option<Event> + Send>;
@@ -259,7 +275,6 @@ pub mod macos_grab {
     }
 
     fn key_from_code(code: u16) -> Key {
-        use std::sync::atomic::Ordering;
         if caps_lock_remap::CAPS_LOCK_REMAP_ACTIVE.load(Ordering::Acquire)
             && code == caps_lock_remap::VKEY_F18
         {
@@ -430,11 +445,6 @@ pub mod macos_grab {
     }
 
     pub fn is_accessibility_trusted(prompt: bool) -> bool {
-        use core_foundation::base::TCFType;
-        use core_foundation::boolean::CFBoolean;
-        use core_foundation::dictionary::CFDictionary;
-        use core_foundation::string::CFString;
-
         extern "C" {
             fn AXIsProcessTrustedWithOptions(
                 options: core_foundation::dictionary::CFDictionaryRef,
@@ -488,11 +498,6 @@ impl PlatformEmitter {
     }
 
     fn emit(&mut self, action: &Action) -> Result<(), String> {
-        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-            SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL, MOUSEINPUT,
-        };
-        use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
-
         // Win32 defines one scroll notch as 120 mouseData units; apps accumulate and act per 120,
         // so sending sub-120 values each tick enables smooth high-resolution scrolling.
         const WHEEL_DELTA: f64 = 120.0;
@@ -563,7 +568,6 @@ struct PlatformEmitter {
 #[cfg(target_os = "macos")]
 impl PlatformEmitter {
     fn new() -> Self {
-        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
         Self {
             source: CGEventSource::new(CGEventSourceStateID::HIDSystemState)
                 .expect("CGEventSource creation failed"),
@@ -574,10 +578,6 @@ impl PlatformEmitter {
     }
 
     fn emit(&mut self, action: &Action) -> Result<(), String> {
-        use core_graphics::event::{
-            CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
-        };
-
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
         let (cg_type, cg_button) = match action {
@@ -594,7 +594,6 @@ impl PlatformEmitter {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
             Action::Scroll { delta_x, delta_y } => {
-                use core_graphics::event::ScrollEventUnit;
                 // 16.0 scales ViMouse scroll units to macOS pixel scroll units.
                 const PIXELS_PER_UNIT: f64 = 16.0;
                 let px_y = (delta_y * PIXELS_PER_UNIT).round() as i32;
@@ -653,8 +652,6 @@ struct PlatformEmitter {
 #[cfg(target_os = "linux")]
 impl PlatformEmitter {
     fn new() -> Self {
-        use std::ptr;
-
         let Ok(xlib) = x11_dl::xlib::Xlib::open() else {
             return Self {
                 xlib: None,

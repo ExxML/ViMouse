@@ -2,6 +2,16 @@ use crate::config::{OverlayIconPos, OVERLAY_ICON_POSITION, OVERLAY_ICON_SIZE_MON
 use crate::state::{Mode, MonitorInfo, Shared};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
+#[cfg(target_os = "linux")]
+use std::ffi::c_void;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
+};
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
@@ -17,6 +27,8 @@ use winit::platform::x11::{
     EventLoopBuilderExtX11, WindowBuilderExtX11, WindowExtX11, XWindowType,
 };
 use winit::window::{Window, WindowBuilder, WindowLevel};
+#[cfg(target_os = "linux")]
+use x11_dl::xlib;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OverlayIconState {
@@ -285,9 +297,6 @@ fn configure_overlay_hittest(_window: &Window) {}
 
 #[cfg(target_os = "linux")]
 fn configure_platform_overlay_window(window: &Window) {
-    use std::ffi::c_void;
-    use x11_dl::xlib;
-
     let Some(display) = window.xlib_display() else {
         return;
     };
@@ -328,13 +337,6 @@ fn configure_platform_overlay_window(_window: &Window) {}
 // Prevent the overlay icon from being focusable. Uses SWP_NOZORDER so z-order is unchanged
 // (winit already set HWND_TOPMOST via WindowLevel::AlwaysOnTop at creation time).
 fn finalize_overlay_window(window: &Window) {
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW,
-    };
-
     unsafe {
         let hwnd = window.hwnd() as HWND;
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;

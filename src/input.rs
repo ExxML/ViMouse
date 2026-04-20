@@ -641,8 +641,6 @@ fn is_runtime_modifier(key: Key) -> bool {
 }
 
 pub fn caps_lock_used_in_config() -> bool {
-    use crate::config::*;
-    use rdev::Key;
     [
         KEY_NORMAL_MODE,
         KEY_INSERT_MODE,

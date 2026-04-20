@@ -1,5 +1,22 @@
 use crate::config::JUMP_GRID;
 use crate::state::{MonitorInfo, Shared};
+#[cfg(target_os = "linux")]
+use std::ffi::c_void;
+#[cfg(target_os = "windows")]
+use std::ptr;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{HWND, POINT, SIZE};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Graphics::Gdi::{
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow, GWL_EXSTYLE,
+    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, ULW_ALPHA,
+    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+};
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
@@ -11,6 +28,8 @@ use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 #[cfg(target_os = "linux")]
 use winit::platform::x11::{WindowBuilderExtX11, WindowExtX11, XWindowType};
 use winit::window::{Window, WindowBuilder, WindowLevel};
+#[cfg(target_os = "linux")]
+use x11_dl::xlib;
 
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
@@ -78,15 +97,6 @@ impl GridSurfaceImp {
     }
 
     fn paint(&mut self, window: &Window, w: u32, h: u32) {
-        use std::ptr;
-        use windows_sys::Win32::Foundation::{HWND, POINT, SIZE};
-        use windows_sys::Win32::Graphics::Gdi::{
-            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
-            SelectObject, AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION,
-            DIB_RGB_COLORS,
-        };
-        use windows_sys::Win32::UI::WindowsAndMessaging::{UpdateLayeredWindow, ULW_ALPHA};
-
         let hwnd = window.hwnd() as HWND;
 
         let pixel_count = (w * h) as usize;
@@ -632,12 +642,6 @@ fn configure_grid_overlay_window(window: &Window) {
 
 #[cfg(target_os = "windows")]
 fn platform_configure_grid_window(window: &Window) {
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_APPWINDOW, WS_EX_LAYERED,
-        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-    };
     unsafe {
         let hwnd = window.hwnd() as HWND;
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
@@ -664,8 +668,6 @@ fn platform_configure_grid_window(window: &Window) {
 
 #[cfg(target_os = "linux")]
 fn platform_configure_grid_window(window: &Window) {
-    use std::ffi::c_void;
-    use x11_dl::xlib;
     let Some(display) = window.xlib_display() else {
         return;
     };

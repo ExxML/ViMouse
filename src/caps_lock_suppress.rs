@@ -1,6 +1,12 @@
 // Windows/Linux only. Disables the Caps Lock toggle state and LED on launch so
 // the key acts purely as a ViMouse trigger with no side effects. Re-enabled on exit or panic.
+#[cfg(target_os = "linux")]
+use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    keybd_event, GetKeyState, KEYEVENTF_KEYUP, VK_CAPITAL,
+};
 
 static SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
@@ -17,9 +23,6 @@ pub fn suppress() {
 
 #[cfg(target_os = "windows")]
 fn platform_suppress() -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        keybd_event, GetKeyState, KEYEVENTF_KEYUP, VK_CAPITAL,
-    };
     unsafe {
         // If Caps Lock is currently on, send a key press+release to toggle it off.
         if GetKeyState(VK_CAPITAL as i32) & 0x0001 != 0 {
@@ -41,7 +44,6 @@ fn platform_suppress() -> bool {
 
 #[cfg(target_os = "linux")]
 fn with_display<F: FnOnce(&x11_dl::xlib::Xlib, *mut x11_dl::xlib::Display)>(f: F) -> bool {
-    use std::ptr;
     let Ok(xlib) = x11_dl::xlib::Xlib::open() else {
         return false;
     };
