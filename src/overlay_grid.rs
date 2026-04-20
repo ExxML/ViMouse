@@ -58,11 +58,11 @@ impl GridSurface {
             window.set_visible(false);
             return;
         }
-        position_grid_window(window, &state.monitor);
         let (w, h) = monitor_size_physical(&state.monitor);
         set_grid_window_size(window, &state.monitor, w, h);
-        window.set_visible(true);
         self.imp.paint(window, w, h);
+        position_grid_window(window, &state.monitor);
+        window.set_visible(true);
     }
 
 }

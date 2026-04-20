@@ -85,16 +85,18 @@ pub fn current_overlay_icon(shared: &Shared) -> OverlayIconState {
     }
 }
 
-// Overlay icon painting is intentionally tiny: move the window, draw the square, present it.
+// Overlay icon painting is intentionally tiny: draw the square, present it, then move the window.
+// Position is set after rendering so the compositor never shows stale content at the new location.
 pub fn paint_overlay_icon(
     window: &Window,
     pixels: &mut Pixels,
     overlay: &OverlayIconState,
 ) -> Result<(), Error> {
     let overlay_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
-    position_overlay(window, &overlay.monitor);
     draw_overlay(pixels.frame_mut(), overlay.mode, overlay_size as usize);
-    pixels.render()
+    pixels.render()?;
+    position_overlay(window, &overlay.monitor);
+    Ok(())
 }
 
 fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
