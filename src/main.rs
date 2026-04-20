@@ -17,7 +17,7 @@ use crate::monitor::collect_monitors;
 use crate::overlay_grid::{create_grid_window, current_grid_state, GridSurface};
 use crate::overlay_icon::{
     create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
-    show_overlay_icon_window, OverlayIconState,
+    reassert_topmost, show_overlay_icon_window, OverlayIconState,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
@@ -111,6 +111,11 @@ fn main() {
         }
     }
 
+    // Ticks remaining before reasserting icon topmost after grid hides.
+    // The taskbar raises itself asynchronously in response to the grid hide, so we wait a few
+    // pump cycles before reclaiming topmost to ensure we win the race.
+    let mut topmost_reassert_ticks: u8 = 0;
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(33));
 
@@ -124,8 +129,19 @@ fn main() {
 
                 let grid_state = current_grid_state(&shared);
                 if last_grid_state != grid_state {
+                    let was_visible = last_grid_state.visible;
                     last_grid_state = grid_state;
                     grid_surface.update(&grid_window, &last_grid_state);
+                    if was_visible && !last_grid_state.visible {
+                        topmost_reassert_ticks = 2;
+                    }
+                }
+
+                if topmost_reassert_ticks > 0 {
+                    topmost_reassert_ticks -= 1;
+                    if topmost_reassert_ticks == 0 {
+                        reassert_topmost(&window);
+                    }
                 }
             }
             WinitEvent::WindowEvent { window_id, event } => match event {
