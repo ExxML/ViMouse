@@ -19,8 +19,9 @@ use crate::overlay_icon::{
     create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
     show_overlay_icon_window, OverlayIconState,
 };
-use crate::platform_input::shutdown_platform_input;
+use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
+use rdev::Button;
 use pixels::Pixels;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -75,6 +76,16 @@ fn main() {
         .center();
 
     let mut state = SharedState::new(initial_cursor, 0, monitors);
+    if mouse_button_is_down(Button::Left) {
+        state
+            .pending_actions
+            .push(Action::ButtonRelease(Button::Left));
+    }
+    if mouse_button_is_down(Button::Right) {
+        state
+            .pending_actions
+            .push(Action::ButtonRelease(Button::Right));
+    }
     state
         .pending_actions
         .push(Action::MouseMove(initial_cursor));

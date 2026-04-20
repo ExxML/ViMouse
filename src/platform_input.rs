@@ -35,6 +35,69 @@ pub fn shutdown_platform_input() {
     macos_grab::shutdown();
 }
 
+/// Returns true if the given mouse button is physically held down according to the OS.
+/// Returns false on platforms where this cannot be determined cheaply.
+pub fn mouse_button_is_down(button: rdev::Button) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+            GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
+        };
+        let vk = match button {
+            rdev::Button::Left => VK_LBUTTON,
+            rdev::Button::Right => VK_RBUTTON,
+            _ => return false,
+        };
+        // Bit 15 set means the key is currently down.
+        unsafe { GetAsyncKeyState(vk as i32) as u16 & 0x8000 != 0 }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::event::{CGEventSource, CGEventSourceStateID, CGMouseButton};
+        use core_graphics::event_source::CGEventSourceExt;
+        let cg_button = match button {
+            rdev::Button::Left => CGMouseButton::Left,
+            rdev::Button::Right => CGMouseButton::Right,
+            _ => return false,
+        };
+        CGEventSource::mouse_button(CGEventSourceStateID::CombinedSessionState, cg_button)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::raw::{c_int, c_uint, c_ulong};
+        use std::ptr;
+        use x11_dl::xlib::Xlib;
+
+        let mask: c_uint = match button {
+            rdev::Button::Left => 1 << 8,   // Button1Mask
+            rdev::Button::Right => 1 << 10, // Button3Mask
+            _ => return false,
+        };
+
+        let Ok(xlib) = Xlib::open() else { return false };
+        let display = unsafe { (xlib.XOpenDisplay)(ptr::null()) };
+        if display.is_null() {
+            return false;
+        }
+        let mut mask_return: c_uint = 0;
+        unsafe {
+            let root = (xlib.XDefaultRootWindow)(display);
+            let (mut _a, mut _b) = (0 as c_ulong, 0 as c_ulong);
+            let (mut _c, mut _d, mut _e, mut _f) = (0 as c_int, 0, 0, 0);
+            (xlib.XQueryPointer)(
+                display, root,
+                &mut _a, &mut _b,
+                &mut _c, &mut _d, &mut _e, &mut _f,
+                &mut mask_return,
+            );
+            (xlib.XCloseDisplay)(display);
+        }
+        mask_return & mask != 0
+    }
+}
+
 // macOS event suppression and simulation works differently than Windows or Linux
 // therefore, we use a custom event tap on macOS instead of rdev's built-in grab/simulate functionality
 // otherwise a "Trace/BPT trap: 5" error is thrown when emitting synthetic key events
