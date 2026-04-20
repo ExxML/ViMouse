@@ -54,14 +54,17 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
 
     #[cfg(target_os = "macos")]
     {
-        use core_graphics::event::{CGEventSource, CGEventSourceStateID, CGMouseButton};
-        use core_graphics::event_source::CGEventSourceExt;
-        let cg_button = match button {
-            rdev::Button::Left => CGMouseButton::Left,
-            rdev::Button::Right => CGMouseButton::Right,
+        use core_graphics::event_source::CGEventSourceStateID;
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventSourceButtonState(state_id: CGEventSourceStateID, button: u32) -> bool;
+        }
+        let cg_button: u32 = match button {
+            rdev::Button::Left => 0,
+            rdev::Button::Right => 1,
             _ => return false,
         };
-        CGEventSource::mouse_button(CGEventSourceStateID::CombinedSessionState, cg_button)
+        unsafe { CGEventSourceButtonState(CGEventSourceStateID::CombinedSessionState, cg_button) }
     }
 
     #[cfg(target_os = "linux")]
@@ -87,9 +90,14 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
             let (mut _a, mut _b) = (0 as c_ulong, 0 as c_ulong);
             let (mut _c, mut _d, mut _e, mut _f) = (0 as c_int, 0, 0, 0);
             (xlib.XQueryPointer)(
-                display, root,
-                &mut _a, &mut _b,
-                &mut _c, &mut _d, &mut _e, &mut _f,
+                display,
+                root,
+                &mut _a,
+                &mut _b,
+                &mut _c,
+                &mut _d,
+                &mut _e,
+                &mut _f,
                 &mut mask_return,
             );
             (xlib.XCloseDisplay)(display);
