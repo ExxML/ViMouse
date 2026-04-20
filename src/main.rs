@@ -17,14 +17,32 @@ use crate::monitor::collect_monitors;
 use crate::overlay_grid::{create_grid_window, current_grid_state, GridSurface};
 use crate::overlay_icon::{
     create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
-    show_overlay_icon_window,
+    show_overlay_icon_window, OverlayIconState,
 };
 use crate::platform_input::shutdown_platform_input;
 use crate::state::{Action, SharedState};
+use pixels::Pixels;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
+use winit::window::Window;
+
+fn paint_or_exit(
+    window: &Window,
+    pixels: &mut Pixels,
+    overlay_icon: &OverlayIconState,
+    control_flow: &mut ControlFlow,
+) {
+    match paint_overlay_icon(window, pixels, overlay_icon) {
+        Ok(()) => show_overlay_icon_window(window),
+        Err(error) => {
+            eprintln!("overlay icon render error: {error}");
+            shutdown_platform_input();
+            *control_flow = ControlFlow::Exit;
+        }
+    }
+}
 
 fn main() {
     #[cfg(target_os = "macos")]
@@ -99,44 +117,24 @@ fn main() {
                     grid_surface.update(&grid_window, &last_grid_state);
                 }
             }
-            WinitEvent::WindowEvent {
-                window_id,
-                event: WindowEvent::Resized(_),
-            } if window_id == window.id() => {
-                // Re-sync in case the OS adjusted the size; show ensures the window is visible.
-                match paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
-                    Ok(()) => show_overlay_icon_window(&window),
-                    Err(error) => {
-                        eprintln!("overlay icon render error: {error}");
-                        shutdown_platform_input();
-                        *control_flow = ControlFlow::Exit;
+            WinitEvent::WindowEvent { window_id, event } => match event {
+                WindowEvent::Resized(_) if window_id == window.id() => {
+                    // Re-sync in case the OS adjusted the size; show ensures the window is visible.
+                    paint_or_exit(&window, &mut pixels, &last_overlay_icon, control_flow);
+                }
+                WindowEvent::Resized(_) if window_id == grid_window.id() => {
+                    if last_grid_state.visible {
+                        grid_surface.update(&grid_window, &last_grid_state);
                     }
                 }
-            }
-            WinitEvent::WindowEvent {
-                window_id,
-                event: WindowEvent::Resized(_),
-            } if window_id == grid_window.id() => {
-                if last_grid_state.visible {
-                    grid_surface.update(&grid_window, &last_grid_state);
+                WindowEvent::CloseRequested => {
+                    shutdown_platform_input();
+                    *control_flow = ControlFlow::Exit;
                 }
-            }
+                _ => {}
+            },
             WinitEvent::RedrawRequested(window_id) if window_id == window.id() => {
-                match paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
-                    Ok(()) => show_overlay_icon_window(&window),
-                    Err(error) => {
-                        eprintln!("overlay icon render error: {error}");
-                        shutdown_platform_input();
-                        *control_flow = ControlFlow::Exit;
-                    }
-                }
-            }
-            WinitEvent::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                shutdown_platform_input();
-                *control_flow = ControlFlow::Exit;
+                paint_or_exit(&window, &mut pixels, &last_overlay_icon, control_flow);
             }
             _ => {}
         }
