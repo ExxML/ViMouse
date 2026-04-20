@@ -257,6 +257,11 @@ fn cycle_monitor(state: &mut SharedState) {
     }
 
     state.selected_monitor = (state.selected_monitor + 1) % state.monitors.len();
+
+    if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
+        state.cursor = monitor.center();
+        state.pending_actions.push(Action::MouseMove(state.cursor));
+    }
 }
 
 fn queue_jump(state: &mut SharedState, key: Key) {
