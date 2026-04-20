@@ -325,13 +325,14 @@ fn configure_platform_overlay_window(window: &Window) {
 fn configure_platform_overlay_window(_window: &Window) {}
 
 #[cfg(target_os = "windows")]
-// Prevent the overlay icon from being focusable
+// Prevent the overlay icon from being focusable. Uses SWP_NOZORDER so z-order is unchanged
+// (winit already set HWND_TOPMOST via WindowLevel::AlwaysOnTop at creation time).
 fn finalize_overlay_window(window: &Window) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_APPWINDOW,
-        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW,
     };
 
     unsafe {
@@ -341,12 +342,12 @@ fn finalize_overlay_window(window: &Window) {
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, overlay_ex_style as isize);
         SetWindowPos(
             hwnd,
-            HWND_TOPMOST,
+            std::ptr::null_mut(),
             0,
             0,
             0,
             0,
-            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
         );
     }
 }
