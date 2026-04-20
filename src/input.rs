@@ -255,7 +255,13 @@ fn cycle_monitor(state: &mut SharedState) {
         return;
     }
 
+    let prev = state.selected_monitor;
     state.selected_monitor = (state.selected_monitor + 1) % state.monitors.len();
+
+    // If there is only one monitor, do not move mouse to center of screen
+    if state.selected_monitor == prev {
+        return;
+    }
 
     if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
         state.cursor = monitor.center();
