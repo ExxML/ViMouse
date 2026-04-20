@@ -1,16 +1,16 @@
 use crate::config::JUMP_GRID;
 use crate::state::{MonitorInfo, Shared};
-use winit::event_loop::EventLoop;
-use winit::window::{Window, WindowBuilder, WindowLevel};
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 #[cfg(target_os = "macos")]
 use winit::dpi::{LogicalPosition, LogicalSize};
-#[cfg(target_os = "linux")]
-use winit::platform::x11::{WindowBuilderExtX11, WindowExtX11, XWindowType};
+use winit::event_loop::EventLoop;
 #[cfg(target_os = "windows")]
 use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
+#[cfg(target_os = "linux")]
+use winit::platform::x11::{WindowBuilderExtX11, WindowExtX11, XWindowType};
+use winit::window::{Window, WindowBuilder, WindowLevel};
 
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
@@ -64,7 +64,6 @@ impl GridSurface {
         position_grid_window(window, &state.monitor);
         window.set_visible(true);
     }
-
 }
 
 // ── Windows implementation ───────────────────────────────────────────────────
@@ -82,9 +81,9 @@ impl GridSurfaceImp {
         use std::ptr;
         use windows_sys::Win32::Foundation::{HWND, POINT, SIZE};
         use windows_sys::Win32::Graphics::Gdi::{
-            AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, BI_RGB,
-            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject,
-            DIB_RGB_COLORS, GetDC, ReleaseDC, SelectObject,
+            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
+            SelectObject, AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION,
+            DIB_RGB_COLORS,
         };
         use windows_sys::Win32::UI::WindowsAndMessaging::{UpdateLayeredWindow, ULW_ALPHA};
 
@@ -152,20 +151,18 @@ impl GridSurfaceImp {
             };
 
             let outer = window.outer_position().unwrap_or_default();
-            let pt_dst = POINT { x: outer.x, y: outer.y };
-            let sz = SIZE { cx: w as i32, cy: h as i32 };
+            let pt_dst = POINT {
+                x: outer.x,
+                y: outer.y,
+            };
+            let sz = SIZE {
+                cx: w as i32,
+                cy: h as i32,
+            };
             let pt_src = POINT { x: 0, y: 0 };
 
             UpdateLayeredWindow(
-                hwnd,
-                screen_dc,
-                &pt_dst,
-                &sz,
-                mem_dc,
-                &pt_src,
-                0,
-                &blend,
-                ULW_ALPHA,
+                hwnd, screen_dc, &pt_dst, &sz, mem_dc, &pt_src, 0, &blend, ULW_ALPHA,
             );
 
             SelectObject(mem_dc, old_bm);
@@ -248,8 +245,8 @@ impl GridSurfaceImp {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(window) }
-            .expect("grid wgpu surface creation failed");
+        let surface =
+            unsafe { instance.create_surface(window) }.expect("grid wgpu surface creation failed");
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(&surface),
@@ -259,14 +256,20 @@ impl GridSurfaceImp {
         .expect("grid wgpu adapter not found");
 
         let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor { limits: adapter.limits(), ..Default::default() },
+            &wgpu::DeviceDescriptor {
+                limits: adapter.limits(),
+                ..Default::default()
+            },
             None,
         ))
         .expect("grid wgpu device request failed");
 
         let caps = surface.get_capabilities(&adapter);
 
-        let surface_format = caps.formats.iter().copied()
+        let surface_format = caps
+            .formats
+            .iter()
+            .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
 
@@ -277,19 +280,23 @@ impl GridSurfaceImp {
             wgpu::CompositeAlphaMode::PreMultiplied,
             wgpu::CompositeAlphaMode::Inherit,
         ]
-        .iter().copied()
+        .iter()
+        .copied()
         .find(|m| caps.alpha_modes.contains(m))
         .unwrap_or(caps.alpha_modes[0]);
 
-        surface.configure(&device, &wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: w,
-            height: h,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode,
-            view_formats: vec![],
-        });
+        surface.configure(
+            &device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: surface_format,
+                width: w,
+                height: h,
+                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode,
+                view_formats: vec![],
+            },
+        );
 
         // Build pipeline once — it does not depend on texture dimensions.
         let (pipeline, bind_group_layout) = Self::build_pipeline(&device, surface_format);
@@ -308,18 +315,47 @@ impl GridSurfaceImp {
 
         let texture = Self::create_texture(&device, w, h);
         queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &pixel_cache,
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         let bind_group = Self::create_bind_group(&device, &bind_group_layout, &texture, &sampler);
 
-        Self { surface, device, queue, surface_format, alpha_mode, pipeline, bind_group_layout, sampler, texture, bind_group, pixel_cache, texture_size: (w, h) }
+        Self {
+            surface,
+            device,
+            queue,
+            surface_format,
+            alpha_mode,
+            pipeline,
+            bind_group_layout,
+            sampler,
+            texture,
+            bind_group,
+            pixel_cache,
+            texture_size: (w, h),
+        }
     }
 
-    fn build_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
+    fn build_pipeline(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+    ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(GRID_SHADER)),
@@ -356,7 +392,11 @@ impl GridSurfaceImp {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -378,7 +418,11 @@ impl GridSurfaceImp {
     fn create_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {
             label: None,
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -388,14 +432,25 @@ impl GridSurfaceImp {
         })
     }
 
-    fn create_bind_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, texture: &wgpu::Texture, sampler: &wgpu::Sampler) -> wgpu::BindGroup {
+    fn create_bind_group(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        texture: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+    ) -> wgpu::BindGroup {
         let tex_view = texture.create_view(&Default::default());
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
             ],
         })
     }
@@ -403,33 +458,57 @@ impl GridSurfaceImp {
     fn paint(&mut self, _window: &Window, w: u32, h: u32) {
         // Rebuild texture, pixel cache, and bind group only when monitor size changes.
         if self.texture_size != (w, h) {
-            self.surface.configure(&self.device, &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.surface_format,
-                width: w,
-                height: h,
-                present_mode: wgpu::PresentMode::AutoVsync,
-                alpha_mode: self.alpha_mode,
-                view_formats: vec![],
-            });
+            self.surface.configure(
+                &self.device,
+                &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: self.surface_format,
+                    width: w,
+                    height: h,
+                    present_mode: wgpu::PresentMode::AutoVsync,
+                    alpha_mode: self.alpha_mode,
+                    view_formats: vec![],
+                },
+            );
             self.pixel_cache = vec![0u8; (w * h * 4) as usize];
             draw_grid_rgba(&mut self.pixel_cache, w as usize, h as usize);
             self.texture = Self::create_texture(&self.device, w, h);
-            self.bind_group = Self::create_bind_group(&self.device, &self.bind_group_layout, &self.texture, &self.sampler);
+            self.bind_group = Self::create_bind_group(
+                &self.device,
+                &self.bind_group_layout,
+                &self.texture,
+                &self.sampler,
+            );
             self.texture_size = (w, h);
         }
 
         // Upload cached pixel data (grid is static, same data every frame).
         self.queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &self.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &self.pixel_cache,
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
-            Err(e) => { eprintln!("grid surface error: {e}"); return; }
+            Err(e) => {
+                eprintln!("grid surface error: {e}");
+                return;
+            }
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -439,7 +518,10 @@ impl GridSurfaceImp {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: true },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: true,
+                    },
                 })],
                 depth_stencil_attachment: None,
             });
@@ -519,7 +601,9 @@ pub fn create_grid_window(event_loop: &EventLoop<()>) -> Window {
         .with_inner_size(PhysicalSize::new(1u32, 1u32));
 
     let builder = configure_grid_window_builder(builder);
-    let window = builder.build(event_loop).expect("failed to create grid window");
+    let window = builder
+        .build(event_loop)
+        .expect("failed to create grid window");
     configure_grid_overlay_window(&window);
     window
 }
@@ -551,8 +635,8 @@ fn platform_configure_grid_window(window: &Window) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_APPWINDOW,
-        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_APPWINDOW, WS_EX_LAYERED,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     };
     unsafe {
         let hwnd = window.hwnd() as HWND;
@@ -566,8 +650,15 @@ fn platform_configure_grid_window(window: &Window) {
                 | WS_EX_NOACTIVATE
                 | WS_EX_TOOLWINDOW) as isize,
         );
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        );
     }
 }
 
@@ -575,16 +666,26 @@ fn platform_configure_grid_window(window: &Window) {
 fn platform_configure_grid_window(window: &Window) {
     use std::ffi::c_void;
     use x11_dl::xlib;
-    let Some(display) = window.xlib_display() else { return };
-    let Some(xwindow) = window.xlib_window() else { return };
+    let Some(display) = window.xlib_display() else {
+        return;
+    };
+    let Some(xwindow) = window.xlib_window() else {
+        return;
+    };
     let Ok(xlib) = xlib::Xlib::open() else { return };
     unsafe {
         let display = display as *mut xlib::Display;
         let hints = {
             let p = (xlib.XGetWMHints)(display, xwindow);
-            if p.is_null() { (xlib.XAllocWMHints)() } else { p }
+            if p.is_null() {
+                (xlib.XAllocWMHints)()
+            } else {
+                p
+            }
         };
-        if hints.is_null() { return; }
+        if hints.is_null() {
+            return;
+        }
         (*hints).flags |= xlib::InputHint;
         (*hints).input = 0;
         (xlib.XSetWMHints)(display, xwindow, hints);
