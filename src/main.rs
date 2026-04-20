@@ -21,8 +21,8 @@ use crate::overlay_icon::{
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
-use rdev::Button;
 use pixels::Pixels;
+use rdev::Button;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
