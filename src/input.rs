@@ -232,8 +232,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
 fn enter_insert_mode(state: &mut SharedState) {
     state.mode = Mode::Insert;
     state.pressed_keys.clear();
-    release_mouse_button(state, Button::Left);
-    release_mouse_button(state, Button::Right);
+    release_all_buttons(state);
 }
 
 fn enter_normal_mode(state: &mut SharedState, held_keys: &HashSet<Key>) {
@@ -260,6 +259,7 @@ fn cycle_monitor(state: &mut SharedState) {
 
     if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
         state.cursor = monitor.center();
+        release_all_buttons(state);
         state.pending_actions.push(Action::MouseMove(state.cursor));
     }
 }
@@ -311,6 +311,11 @@ fn release_mouse_button(state: &mut SharedState, button: Button) {
         }
         _ => {}
     }
+}
+
+fn release_all_buttons(state: &mut SharedState) {
+    release_mouse_button(state, Button::Left);
+    release_mouse_button(state, Button::Right);
 }
 
 fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: bool) {
