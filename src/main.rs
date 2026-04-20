@@ -73,12 +73,14 @@ fn main() {
     let mut last_overlay_icon = current_overlay_icon(&shared);
     let mut last_grid_state = current_grid_state(&shared);
 
-    if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
-        eprintln!("initial overlay icon render error: {error}");
-        shutdown_platform_input();
-        return;
+    match paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
+        Ok(()) => show_overlay_icon_window(&window),
+        Err(error) => {
+            eprintln!("initial overlay icon render error: {error}");
+            shutdown_platform_input();
+            return;
+        }
     }
-    show_overlay_icon_window(&window);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(33));
@@ -87,8 +89,8 @@ fn main() {
             WinitEvent::MainEventsCleared => {
                 let overlay_icon = current_overlay_icon(&shared);
                 if last_overlay_icon != overlay_icon {
-                    window.request_redraw();
                     last_overlay_icon = overlay_icon;
+                    window.request_redraw();
                 }
 
                 let grid_state = current_grid_state(&shared);
@@ -100,15 +102,29 @@ fn main() {
             WinitEvent::WindowEvent {
                 window_id,
                 event: WindowEvent::Resized(_),
+            } if window_id == window.id() => {
+                // Re-sync in case the OS adjusted the size; show ensures the window is visible.
+                match paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
+                    Ok(()) => show_overlay_icon_window(&window),
+                    Err(error) => {
+                        eprintln!("overlay icon render error: {error}");
+                        shutdown_platform_input();
+                        *control_flow = ControlFlow::Exit;
+                    }
+                }
+            }
+            WinitEvent::WindowEvent {
+                window_id,
+                event: WindowEvent::Resized(_),
             } if window_id == grid_window.id() => {
                 if last_grid_state.visible {
                     grid_surface.update(&grid_window, &last_grid_state);
                 }
             }
-            WinitEvent::RedrawRequested(window_id) => {
-                if window_id == window.id() {
-                    if let Err(error) = paint_overlay_icon(&window, &mut pixels, &last_overlay_icon)
-                    {
+            WinitEvent::RedrawRequested(window_id) if window_id == window.id() => {
+                match paint_overlay_icon(&window, &mut pixels, &last_overlay_icon) {
+                    Ok(()) => show_overlay_icon_window(&window),
+                    Err(error) => {
                         eprintln!("overlay icon render error: {error}");
                         shutdown_platform_input();
                         *control_flow = ControlFlow::Exit;

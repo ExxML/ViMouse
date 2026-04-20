@@ -92,10 +92,10 @@ pub fn paint_overlay_icon(
     pixels: &mut Pixels,
     overlay: &OverlayIconState,
 ) -> Result<(), Error> {
-    let overlay_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
-    draw_overlay(pixels.frame_mut(), overlay.mode, overlay_size as usize);
+    let inner_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
+    draw_overlay(pixels.frame_mut(), overlay.mode, inner_size.width as usize);
     pixels.render()?;
-    position_overlay(window, &overlay.monitor);
+    position_overlay(window, &overlay.monitor, inner_size);
     Ok(())
 }
 
@@ -105,21 +105,24 @@ fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
         .max(1.0) as u32
 }
 
+// Ensures the pixels buffer/surface matches the monitor size. Hides the window briefly if a resize
+// is needed so the compositor never shows a stale frame. Returns the target inner size.
 fn sync_overlay_size(
     window: &Window,
     pixels: &mut Pixels,
     monitor: &MonitorInfo,
-) -> Result<u32, Error> {
+) -> Result<PhysicalSize<u32>, Error> {
     let overlay_size = overlay_size_for_monitor(*monitor);
     let inner_size = overlay_inner_size(monitor, overlay_size);
 
     if window.inner_size() != inner_size {
+        window.set_visible(false);
         set_overlay_inner_size(window, monitor, overlay_size);
         pixels.resize_buffer(inner_size.width, inner_size.height)?;
         pixels.resize_surface(inner_size.width, inner_size.height)?;
     }
 
-    Ok(inner_size.width)
+    Ok(inner_size)
 }
 
 #[cfg(target_os = "macos")]
@@ -147,8 +150,8 @@ fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size:
 }
 
 #[cfg(target_os = "macos")]
-fn position_overlay(window: &Window, monitor: &MonitorInfo) {
-    let overlay_size = window.outer_size().to_logical::<f64>(monitor.scale_factor);
+fn position_overlay(window: &Window, monitor: &MonitorInfo, inner_size: PhysicalSize<u32>) {
+    let overlay_size = inner_size.to_logical::<f64>(monitor.scale_factor);
     let x = match OVERLAY_ICON_POSITION {
         OverlayIconPos::TopLeft | OverlayIconPos::BottomLeft => monitor.origin.x,
         OverlayIconPos::TopRight | OverlayIconPos::BottomRight => {
@@ -165,18 +168,17 @@ fn position_overlay(window: &Window, monitor: &MonitorInfo) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn position_overlay(window: &Window, monitor: &MonitorInfo) {
-    let overlay_size = window.outer_size();
+fn position_overlay(window: &Window, monitor: &MonitorInfo, inner_size: PhysicalSize<u32>) {
     let x = match OVERLAY_ICON_POSITION {
         OverlayIconPos::TopLeft | OverlayIconPos::BottomLeft => monitor.origin.x,
         OverlayIconPos::TopRight | OverlayIconPos::BottomRight => {
-            monitor.origin.x + monitor.width - overlay_size.width as f64
+            monitor.origin.x + monitor.width - inner_size.width as f64
         }
     };
     let y = match OVERLAY_ICON_POSITION {
         OverlayIconPos::TopLeft | OverlayIconPos::TopRight => monitor.origin.y,
         OverlayIconPos::BottomLeft | OverlayIconPos::BottomRight => {
-            monitor.origin.y + monitor.height - overlay_size.height as f64
+            monitor.origin.y + monitor.height - inner_size.height as f64
         }
     };
     window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
