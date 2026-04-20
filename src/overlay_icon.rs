@@ -252,11 +252,13 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
 
 #[cfg(target_os = "windows")]
 fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    // Prevent the overlay from showing in Alt+Tab
     builder.with_skip_taskbar(true)
 }
 
 #[cfg(target_os = "linux")]
 fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    // Set the _NET_WM_WINDOW_TYPE to Notification so the window manager treats it as a transient overlay
     builder
         .with_override_redirect(true)
         .with_x11_window_type(vec![XWindowType::Notification])
@@ -324,6 +326,7 @@ fn configure_platform_overlay_window(_window: &Window) {}
 
 #[cfg(target_os = "windows")]
 fn finalize_overlay_window(window: &Window) {
+    // Prevent the overlay icon from being focusable
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
