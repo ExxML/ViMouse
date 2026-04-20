@@ -37,7 +37,7 @@ const GRID_ROWS: usize = JUMP_GRID.len();
 const LINE_THICKNESS: usize = 1;
 
 // Pre-multiplied ARGB for UpdateLayeredWindow on Windows (semi-transparent grey line)
-const LINE_ALPHA: u8 = 96;
+const LINE_ALPHA: u8 = 128;
 const LINE_GREY: u8 = 128;
 
 #[derive(Clone, Debug, PartialEq)]
