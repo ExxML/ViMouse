@@ -430,9 +430,9 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
     }
 
     let speed_multiplier = movement_multiplier(&state.pressed_keys);
-    let Some(_monitor) = current_monitor(&state) else {
+    if state.monitors.is_empty() {
         return;
-    };
+    }
 
     if scroll_mode_active(&state.pressed_keys) {
         let delta_x = -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
@@ -461,13 +461,6 @@ fn update_cursor(state: &mut SharedState, point: Point) {
         state.selected_monitor = index;
     }
     state.cursor = clamped;
-}
-
-fn current_monitor(state: &SharedState) -> Option<crate::state::MonitorInfo> {
-    monitor_index_for_point(&state.monitors, state.cursor)
-        .or(Some(state.selected_monitor))
-        .and_then(|index| state.monitors.get(index))
-        .copied()
 }
 
 fn normalized_direction(keys: &HashSet<Key>) -> Point {
