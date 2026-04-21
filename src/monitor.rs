@@ -92,14 +92,14 @@ fn nearest_monitor(monitors: &[MonitorInfo], point: Point) -> Option<(usize, Poi
     best
 }
 
-// Clamp movement to the actual monitor rectangles so the cursor stays on-screen.
-pub fn clamp_to_virtual_bounds(point: &mut Point, monitors: &[MonitorInfo]) {
-    if let Some((_, clamped)) = nearest_monitor(monitors, *point) {
-        *point = clamped;
-    }
-}
-
 // If the cursor is between monitors, pick the nearest one for overlay placement.
 pub fn monitor_index_for_point(monitors: &[MonitorInfo], point: Point) -> Option<usize> {
     nearest_monitor(monitors, point).map(|(index, _)| index)
+}
+
+// Clamp and return monitor index in a single traversal.
+pub fn clamp_and_find_monitor(point: &mut Point, monitors: &[MonitorInfo]) -> Option<usize> {
+    let (index, clamped) = nearest_monitor(monitors, *point)?;
+    *point = clamped;
+    Some(index)
 }

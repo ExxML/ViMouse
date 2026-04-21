@@ -4,7 +4,7 @@ use crate::config::{
     KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, MOVE_SPEED_PX_PER_SEC,
     SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
-use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
+use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
 use crate::platform_input::{shutdown_platform_input, simulate_input, InputEmitter};
@@ -445,27 +445,22 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
     let mut next_cursor = previous_cursor;
     next_cursor.x += direction.x * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
     next_cursor.y += direction.y * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
-    clamp_to_virtual_bounds(&mut next_cursor, &state.monitors);
 
-    if next_cursor != previous_cursor {
-        state.cursor = next_cursor;
-
-        if let Some(index) = monitor_index_for_point(&state.monitors, state.cursor) {
+    if let Some(index) = clamp_and_find_monitor(&mut next_cursor, &state.monitors) {
+        if next_cursor != previous_cursor {
+            state.cursor = next_cursor;
             state.selected_monitor = index;
+            actions.push(Action::MouseMove(state.cursor));
         }
-
-        actions.push(Action::MouseMove(state.cursor));
     }
 }
 
 fn update_cursor(state: &mut SharedState, point: Point) {
     let mut clamped = point;
-    clamp_to_virtual_bounds(&mut clamped, &state.monitors);
-    state.cursor = clamped;
-
-    if let Some(index) = monitor_index_for_point(&state.monitors, clamped) {
+    if let Some(index) = clamp_and_find_monitor(&mut clamped, &state.monitors) {
         state.selected_monitor = index;
     }
+    state.cursor = clamped;
 }
 
 fn current_monitor(state: &SharedState) -> Option<crate::state::MonitorInfo> {
