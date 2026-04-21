@@ -72,6 +72,14 @@ impl GridSurface {
         }
     }
 
+    pub fn prime(&mut self, window: &Window, monitor: &MonitorInfo) {
+        let (w, h) = monitor_size_physical(monitor);
+        set_grid_window_size(window, monitor, w, h);
+        self.imp.paint(window, w, h);
+        position_grid_window(window, monitor);
+        window.set_visible(false);
+    }
+
     pub fn update(&mut self, window: &Window, state: &GridOverlayState) {
         if !state.visible {
             window.set_visible(false);
