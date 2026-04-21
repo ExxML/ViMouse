@@ -233,15 +233,24 @@ fn main() {
 
                 let overlay_icon = current_overlay_icon(&shared);
                 if last_overlay_icon != overlay_icon {
-                    if last_selected_monitor != selected_monitor {
+                    let monitor_changed = last_selected_monitor != selected_monitor;
+                    if monitor_changed {
                         overlay_icon_slots[last_selected_monitor]
                             .window
                             .set_visible(false);
-                        topmost_reassert_ticks = topmost_reassert_ticks.max(2);
                     }
 
                     last_overlay_icon = overlay_icon;
-                    overlay_icon_slots[selected_monitor].window.request_redraw();
+                    if monitor_changed {
+                        paint_overlay_icon_slot_or_exit(
+                            &mut overlay_icon_slots[selected_monitor],
+                            last_overlay_icon.mode,
+                            true,
+                            control_flow,
+                        );
+                    } else {
+                        overlay_icon_slots[selected_monitor].window.request_redraw();
+                    }
                 }
 
                 let grid_state = current_grid_state(&shared);
