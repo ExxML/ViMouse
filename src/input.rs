@@ -46,7 +46,9 @@ pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
             }
 
             #[cfg(not(target_os = "macos"))]
-            if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, &waker, event)) {
+            if let Err(error) =
+                grab(move |event| handle_hook_event(&shared, &tracker, &waker, event))
+            {
                 eprintln!("input hook error: {error:?}");
             }
         })
@@ -61,6 +63,7 @@ pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
             let frame_time = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);
             let mut last_tick = Instant::now();
             let mut next_tick = last_tick + frame_time;
+            let mut action_buf: Vec<Action> = Vec::with_capacity(8);
 
             loop {
                 // Park until the input hook signals that motion is needed.
@@ -80,8 +83,9 @@ pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
                     .min(0.050);
                 last_tick = now;
 
-                let actions = collect_pending_actions(&shared, delta_seconds);
-                emitter.emit_all(&actions);
+                collect_pending_actions(&shared, delta_seconds, &mut action_buf);
+                emitter.emit_all(&action_buf);
+                action_buf.clear();
 
                 let now = Instant::now();
                 if next_tick > now {
@@ -140,7 +144,12 @@ fn handle_key_event(
     }
 }
 
-fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key, waker: &MotionWaker) -> bool {
+fn handle_key_press(
+    shared: &Shared,
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    waker: &MotionWaker,
+) -> bool {
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     let is_repeat = !tracker.held_keys.insert(key);
 
@@ -202,7 +211,12 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
     true
 }
 
-fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key, waker: &MotionWaker) -> bool {
+fn handle_key_release(
+    shared: &Shared,
+    tracker: &std::sync::Mutex<HookTracker>,
+    key: Key,
+    waker: &MotionWaker,
+) -> bool {
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     tracker.held_keys.remove(&key);
     let was_captured = tracker.captured_keys.remove(&key);
@@ -374,75 +388,57 @@ fn sync_runtime_modifier_suppression(_state: &SharedState, tracker: &mut HookTra
 // Keep runtime modifiers active for ViMouse itself while making them temporarily invisible to
 // the OS whenever captured movement is in progress.
 fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
-    let desired_modifiers = if movement_active(&state.pressed_keys) {
-        tracker
-            .held_keys
-            .iter()
-            .copied()
-            .filter(|key| is_runtime_modifier(*key))
-            .collect::<HashSet<_>>()
-    } else {
-        HashSet::new()
-    };
+    // There are at most 3 runtime modifiers — use a stack array to avoid heap allocation.
+    const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
 
-    let modifiers_to_suppress = desired_modifiers
-        .iter()
-        .copied()
-        .filter(|key| !tracker.suppressed_modifiers.contains(key))
-        .collect::<Vec<_>>();
-    let modifiers_to_restore = tracker
-        .suppressed_modifiers
-        .iter()
-        .copied()
-        .filter(|key| !desired_modifiers.contains(key))
-        .collect::<Vec<_>>();
+    let moving = movement_active(&state.pressed_keys);
 
-    for key in modifiers_to_suppress {
-        tracker.suppressed_modifiers.insert(key);
+    for &key in &RUNTIME_MODIFIERS {
+        let want_suppressed = moving && tracker.held_keys.contains(&key);
+        let is_suppressed = tracker.suppressed_modifiers.contains(&key);
 
-        if !tracker.captured_keys.contains(&key) {
-            tracker.pending_key_events.push((key, false));
-        }
-    }
-
-    for key in modifiers_to_restore {
-        tracker.suppressed_modifiers.remove(&key);
-
-        if tracker.held_keys.contains(&key) {
-            tracker.pending_key_events.push((key, true));
-            tracker.captured_keys.remove(&key);
+        if want_suppressed && !is_suppressed {
+            tracker.suppressed_modifiers.insert(key);
+            if !tracker.captured_keys.contains(&key) {
+                tracker.pending_key_events.push((key, false));
+            }
+        } else if !want_suppressed && is_suppressed {
+            tracker.suppressed_modifiers.remove(&key);
+            if tracker.held_keys.contains(&key) {
+                tracker.pending_key_events.push((key, true));
+                tracker.captured_keys.remove(&key);
+            }
         }
     }
 }
 
-fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
+fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Vec<Action>) {
     let mut state = shared.lock().expect("shared state poisoned");
     // The hook thread only mutates state; all synthetic mouse output is emitted here so
     // cursor movement, clicks, and scrolling stay serialized and predictable.
-    let mut actions = Vec::with_capacity(state.pending_actions.len() + 2);
     actions.append(&mut state.pending_actions);
 
     if state.mode != Mode::Normal {
         state.motion_needed = false;
-        return actions;
+        return;
     }
 
     let direction = normalized_direction(&state.pressed_keys);
     if direction.x == 0.0 && direction.y == 0.0 {
         state.motion_needed = false;
-        return actions;
+        return;
     }
 
     let speed_multiplier = movement_multiplier(&state.pressed_keys);
     let Some(_monitor) = current_monitor(&state) else {
-        return actions;
+        return;
     };
 
     if scroll_mode_active(&state.pressed_keys) {
         let delta_x = -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
         let delta_y = -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
         actions.push(Action::Scroll { delta_x, delta_y });
-        return actions;
+        return;
     }
 
     let previous_cursor = state.cursor;
@@ -460,8 +456,6 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
 
         actions.push(Action::MouseMove(state.cursor));
     }
-
-    actions
 }
 
 fn update_cursor(state: &mut SharedState, point: Point) {
@@ -634,13 +628,13 @@ fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
 }
 
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
-    !keys.iter().any(|key| is_modifier_key(*key))
+    !keys.iter().any(|key| is_runtime_modifier(*key))
 }
 
 fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
     tracker.held_keys.iter().any(|held_key| {
         *held_key != key
-            && !is_modifier_key(*held_key)
+            && !is_runtime_modifier(*held_key)
             && *held_key != Key::CapsLock
             && !tracker.captured_keys.contains(held_key)
     })
@@ -659,14 +653,9 @@ fn is_move_key(key: Key) -> bool {
 }
 
 fn is_jump_key(key: Key) -> bool {
-    JUMP_GRID
-        .iter()
-        .flatten()
-        .any(|candidate| *candidate == key)
-}
-
-fn is_modifier_key(key: Key) -> bool {
-    is_runtime_modifier(key)
+    static JUMP_KEYS: std::sync::OnceLock<HashSet<Key>> = std::sync::OnceLock::new();
+    let set = JUMP_KEYS.get_or_init(|| JUMP_GRID.iter().flatten().copied().collect());
+    set.contains(&key)
 }
 
 fn is_runtime_modifier(key: Key) -> bool {
@@ -674,22 +663,25 @@ fn is_runtime_modifier(key: Key) -> bool {
 }
 
 pub fn caps_lock_used_in_config() -> bool {
-    [
-        KEY_NORMAL_MODE,
-        KEY_INSERT_MODE,
-        KEY_SCROLL,
-        KEY_FAST,
-        KEY_SLOW,
-        KEY_LEFT_CLICK,
-        KEY_RIGHT_CLICK,
-        KEY_CYCLE_MONITOR,
-        KEY_TOGGLE_GRID,
-        KEY_MOVE_LEFT,
-        KEY_MOVE_DOWN,
-        KEY_MOVE_UP,
-        KEY_MOVE_RIGHT,
-    ]
-    .contains(&Key::CapsLock)
-        || KEYS_QUIT.contains(&Key::CapsLock)
-        || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
+    static RESULT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *RESULT.get_or_init(|| {
+        [
+            KEY_NORMAL_MODE,
+            KEY_INSERT_MODE,
+            KEY_SCROLL,
+            KEY_FAST,
+            KEY_SLOW,
+            KEY_LEFT_CLICK,
+            KEY_RIGHT_CLICK,
+            KEY_CYCLE_MONITOR,
+            KEY_TOGGLE_GRID,
+            KEY_MOVE_LEFT,
+            KEY_MOVE_DOWN,
+            KEY_MOVE_UP,
+            KEY_MOVE_RIGHT,
+        ]
+        .contains(&Key::CapsLock)
+            || KEYS_QUIT.contains(&Key::CapsLock)
+            || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
+    })
 }

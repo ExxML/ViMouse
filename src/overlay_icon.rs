@@ -1,5 +1,5 @@
 use crate::config::{OverlayIconPos, OVERLAY_ICON_POSITION, OVERLAY_ICON_SIZE_MONITOR_FRACTION};
-use crate::state::{Mode, MonitorInfo, Shared};
+use crate::state::{Mode, MonitorInfo};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use pixels::{Error, Pixels, SurfaceTexture};
 #[cfg(target_os = "linux")]
@@ -82,19 +82,6 @@ pub fn create_pixels(window: &Window) -> Pixels {
     let window_size = window.inner_size();
     let surface = SurfaceTexture::new(window_size.width, window_size.height, window);
     Pixels::new(window_size.width, window_size.height, surface).expect("pixels init failed")
-}
-
-// Snapshot just the overlay icon-relevant state so the UI code stays simple.
-pub fn current_overlay_icon(shared: &Shared) -> OverlayIconState {
-    let state = shared.lock().expect("shared state poisoned");
-    OverlayIconState {
-        mode: state.mode,
-        monitor: state
-            .monitors
-            .get(state.selected_monitor)
-            .copied()
-            .expect("selected monitor out of bounds"),
-    }
 }
 
 // Overlay icon painting is intentionally tiny: draw the square, present it, then move the window.

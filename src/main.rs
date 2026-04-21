@@ -15,10 +15,10 @@ mod state;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 use crate::overlay_grid::GridOverlayState;
-use crate::overlay_grid::{create_grid_window, current_grid_state, GridSurface};
+use crate::overlay_grid::{create_grid_window, GridSurface};
 use crate::overlay_icon::{
-    create_event_loop, create_pixels, create_window, current_overlay_icon, paint_overlay_icon,
-    reassert_topmost, show_overlay_icon_window, OverlayIconState,
+    create_event_loop, create_pixels, create_window, paint_overlay_icon, reassert_topmost,
+    show_overlay_icon_window, OverlayIconState,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
@@ -30,6 +30,32 @@ use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
+
+struct UISnapshot {
+    selected_monitor: usize,
+    overlay_icon: OverlayIconState,
+    grid_state: GridOverlayState,
+}
+
+fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
+    let state = shared.lock().expect("shared state poisoned");
+    let monitor = state
+        .monitors
+        .get(state.selected_monitor)
+        .copied()
+        .expect("selected monitor out of bounds");
+    UISnapshot {
+        selected_monitor: state.selected_monitor,
+        overlay_icon: OverlayIconState {
+            mode: state.mode,
+            monitor,
+        },
+        grid_state: GridOverlayState {
+            visible: state.show_grid && state.mode == Mode::Normal,
+            monitor,
+        },
+    }
+}
 
 struct OverlayIconSlot {
     window: Window,
@@ -94,13 +120,6 @@ fn create_grid_slots(
     }
 
     slots
-}
-
-fn current_selected_monitor(shared: &Arc<Mutex<SharedState>>) -> usize {
-    shared
-        .lock()
-        .expect("shared state poisoned")
-        .selected_monitor
 }
 
 fn find_overlay_icon_slot(slots: &[OverlayIconSlot], window_id: WindowId) -> Option<usize> {
@@ -193,13 +212,25 @@ fn main() {
     spawn_input_hook(Arc::clone(&shared), Arc::clone(&motion_waker));
     spawn_motion_loop(Arc::clone(&shared), motion_waker);
 
-    let mut last_overlay_icon = current_overlay_icon(&shared);
-    let mut last_grid_state = current_grid_state(&shared);
-    let monitors = shared
-        .lock()
-        .expect("shared state poisoned")
-        .monitors
-        .clone();
+    let (mut last_overlay_icon, mut last_grid_state, monitors) = {
+        let state = shared.lock().expect("shared state poisoned");
+        let monitor = state
+            .monitors
+            .get(state.selected_monitor)
+            .copied()
+            .expect("selected monitor out of bounds");
+        (
+            OverlayIconState {
+                mode: state.mode,
+                monitor,
+            },
+            GridOverlayState {
+                visible: state.show_grid && state.mode == Mode::Normal,
+                monitor,
+            },
+            state.monitors.clone(),
+        )
+    };
 
     let mut overlay_icon_slots = match create_overlay_icon_slots(
         &event_loop,
@@ -217,7 +248,10 @@ fn main() {
 
     let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors);
 
-    let mut last_selected_monitor = current_selected_monitor(&shared);
+    let mut last_selected_monitor = {
+        let snap = current_ui_snapshot(&shared);
+        snap.selected_monitor
+    };
     show_overlay_icon_window(&overlay_icon_slots[last_selected_monitor].window);
 
     // Ticks remaining before reasserting icon topmost after grid hides.
@@ -230,9 +264,10 @@ fn main() {
 
         match event {
             WinitEvent::MainEventsCleared => {
-                let selected_monitor = current_selected_monitor(&shared);
+                let snap = current_ui_snapshot(&shared);
+                let selected_monitor = snap.selected_monitor;
 
-                let overlay_icon = current_overlay_icon(&shared);
+                let overlay_icon = snap.overlay_icon;
                 if last_overlay_icon != overlay_icon {
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
@@ -254,7 +289,7 @@ fn main() {
                     }
                 }
 
-                let grid_state = current_grid_state(&shared);
+                let grid_state = snap.grid_state;
                 if last_grid_state != grid_state {
                     let was_visible = last_grid_state.visible;
 

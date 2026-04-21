@@ -1,4 +1,4 @@
-use crate::state::Action;
+use crate::state::{Action, Point};
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
@@ -563,6 +563,8 @@ struct PlatformEmitter {
     click_count: i64,
     last_press_left: Option<bool>,
     last_press_time: std::time::Instant,
+    // Last known cursor position; updated on MouseMove so button events don't need to query it.
+    last_cursor: core_graphics::geometry::CGPoint,
 }
 
 #[cfg(target_os = "macos")]
@@ -574,6 +576,7 @@ impl PlatformEmitter {
             click_count: 0,
             last_press_left: None,
             last_press_time: std::time::Instant::now(),
+            last_cursor: core_graphics::geometry::CGPoint { x: 0.0, y: 0.0 },
         }
     }
 
@@ -581,6 +584,10 @@ impl PlatformEmitter {
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
         let (cg_type, cg_button) = match action {
+            Action::MouseMove(Point { x, y }) => {
+                self.last_cursor = core_graphics::geometry::CGPoint { x: *x, y: *y };
+                return simulate_input(&action_to_event_type(action, 1.0));
+            }
             Action::ButtonPress(rdev::Button::Left) => {
                 (CGEventType::LeftMouseDown, CGMouseButton::Left)
             }
@@ -628,11 +635,9 @@ impl PlatformEmitter {
             self.last_press_time = std::time::Instant::now();
         }
 
-        let pos = CGEvent::new(self.source.clone())
-            .map_err(|_| "CGEvent creation failed".to_string())?
-            .location();
-        let event = CGEvent::new_mouse_event(self.source.clone(), cg_type, pos, cg_button)
-            .map_err(|_| "CGEvent mouse event creation failed".to_string())?;
+        let event =
+            CGEvent::new_mouse_event(self.source.clone(), cg_type, self.last_cursor, cg_button)
+                .map_err(|_| "CGEvent mouse event creation failed".to_string())?;
         event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, self.click_count);
         event.post(CGEventTapLocation::HID);
 

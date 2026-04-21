@@ -1,5 +1,5 @@
 use crate::config::JUMP_GRID;
-use crate::state::{MonitorInfo, Shared};
+use crate::state::MonitorInfo;
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
@@ -46,22 +46,11 @@ pub struct GridOverlayState {
     pub monitor: MonitorInfo,
 }
 
-pub fn current_grid_state(shared: &Shared) -> GridOverlayState {
-    let state = shared.lock().expect("shared state poisoned");
-    let monitor = state
-        .monitors
-        .get(state.selected_monitor)
-        .copied()
-        .expect("selected monitor out of bounds");
-    GridOverlayState {
-        visible: state.show_grid && state.mode == crate::state::Mode::Normal,
-        monitor,
-    }
-}
-
 // Per-platform grid surface state.
 pub struct GridSurface {
     imp: GridSurfaceImp,
+    // Last monitor the window was sized/positioned for; None before first prime.
+    positioned_monitor: Option<MonitorInfo>,
 }
 
 impl GridSurface {
@@ -69,6 +58,7 @@ impl GridSurface {
         let (w, h) = monitor_size_physical(initial_monitor);
         Self {
             imp: GridSurfaceImp::new(window, w, h),
+            positioned_monitor: None,
         }
     }
 
@@ -77,6 +67,7 @@ impl GridSurface {
         set_grid_window_size(window, monitor, w, h);
         self.imp.paint(window, w, h);
         position_grid_window(window, monitor);
+        self.positioned_monitor = Some(*monitor);
         window.set_visible(false);
     }
 
@@ -86,9 +77,13 @@ impl GridSurface {
             return;
         }
         let (w, h) = monitor_size_physical(&state.monitor);
-        set_grid_window_size(window, &state.monitor, w, h);
+        // Skip redundant OS resize/reposition calls when the monitor hasn't changed.
+        if self.positioned_monitor != Some(state.monitor) {
+            set_grid_window_size(window, &state.monitor, w, h);
+            position_grid_window(window, &state.monitor);
+            self.positioned_monitor = Some(state.monitor);
+        }
         self.imp.paint(window, w, h);
-        position_grid_window(window, &state.monitor);
         window.set_visible(true);
     }
 }
@@ -96,20 +91,36 @@ impl GridSurface {
 // ── Windows implementation ───────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-struct GridSurfaceImp;
+struct GridSurfaceImp {
+    // Pre-computed BGRA pixel cache. Rebuilt only when monitor size changes.
+    pixel_cache: Vec<u32>,
+    texture_size: (u32, u32),
+}
 
 #[cfg(target_os = "windows")]
 impl GridSurfaceImp {
-    fn new(_window: &Window, _w: u32, _h: u32) -> Self {
-        Self
+    fn new(_window: &Window, w: u32, h: u32) -> Self {
+        let pixel_count = (w * h) as usize;
+        let mut pixel_cache = vec![0u32; pixel_count];
+        fill_grid_bgra_premult(&mut pixel_cache, w as usize, h as usize);
+        Self {
+            pixel_cache,
+            texture_size: (w, h),
+        }
     }
 
     fn paint(&mut self, window: &Window, w: u32, h: u32) {
         let hwnd = window.hwnd() as HWND;
 
+        // Rebuild cache only when size changes.
+        if self.texture_size != (w, h) {
+            let pixel_count = (w * h) as usize;
+            self.pixel_cache = vec![0u32; pixel_count];
+            fill_grid_bgra_premult(&mut self.pixel_cache, w as usize, h as usize);
+            self.texture_size = (w, h);
+        }
+
         let pixel_count = (w * h) as usize;
-        let mut pixels: Vec<u32> = vec![0u32; pixel_count];
-        fill_grid_argb_premult(&mut pixels, w as usize, h as usize);
 
         unsafe {
             let screen_dc = GetDC(ptr::null_mut());
@@ -149,17 +160,8 @@ impl GridSurfaceImp {
 
             let old_bm = SelectObject(mem_dc, hbm);
 
-            // DIB stores BGRA in memory; our pixel value is pre-multiplied 0xAARRGGBB.
-            // Rearrange to BGRA bytes: store as 0xAARRGGBB u32 in little-endian = B G R A.
             let dib_slice = std::slice::from_raw_parts_mut(dib_bits as *mut u32, pixel_count);
-            for (dst, &src) in dib_slice.iter_mut().zip(pixels.iter()) {
-                let a = (src >> 24) as u8;
-                let r = (src >> 16) as u8;
-                let g = (src >> 8) as u8;
-                let b = src as u8;
-                // Store BGRA: byte0=B, byte1=G, byte2=R, byte3=A
-                *dst = (b as u32) | ((g as u32) << 8) | ((r as u32) << 16) | ((a as u32) << 24);
-            }
+            dib_slice.copy_from_slice(&self.pixel_cache);
 
             let blend = BLENDFUNCTION {
                 BlendOp: 0, // AC_SRC_OVER
@@ -206,12 +208,13 @@ fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
     start..end
 }
 
-// Fill pre-multiplied ARGB pixels for the grid lines (Windows DIB order: 0xAARRGGBB).
+// Fill pre-multiplied BGRA pixels for UpdateLayeredWindow (DIB memory layout: B G R A bytes).
+// Pre-multiplied: R,G,B are multiplied by A/255.
 #[cfg(target_os = "windows")]
-fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize) {
-    // Pre-multiplied: R,G,B are multiplied by A/255.
+fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
     let pm = (LINE_GREY as u32 * LINE_ALPHA as u32) / 255;
-    let line_pixel: u32 = ((LINE_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    // Memory bytes: B=pm, G=pm, R=pm, A=LINE_ALPHA  →  little-endian u32
+    let line_pixel: u32 = pm | (pm << 8) | (pm << 16) | ((LINE_ALPHA as u32) << 24);
 
     for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
@@ -253,6 +256,8 @@ struct GridSurfaceImp {
     bind_group: wgpu::BindGroup,
     pixel_cache: Vec<u8>,
     texture_size: (u32, u32),
+    // True after the first upload for the current size; cleared on resize.
+    texture_uploaded: bool,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -367,6 +372,7 @@ impl GridSurfaceImp {
             bind_group,
             pixel_cache,
             texture_size: (w, h),
+            texture_uploaded: true,
         }
     }
 
@@ -498,28 +504,32 @@ impl GridSurfaceImp {
                 &self.sampler,
             );
             self.texture_size = (w, h);
+            self.texture_uploaded = false;
         }
 
-        // Upload cached pixel data (grid is static, same data every frame).
-        self.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.pixel_cache,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(w * 4),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
+        // Grid pixel data is static — upload only once per size.
+        if !self.texture_uploaded {
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &self.pixel_cache,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.texture_uploaded = true;
+        }
 
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -578,9 +588,7 @@ fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
 
 #[cfg(not(target_os = "windows"))]
 fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
-    for chunk in frame.chunks_exact_mut(4) {
-        chunk.copy_from_slice(&[0, 0, 0, 0]);
-    }
+    frame.fill(0);
     for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
             for x in line_range(x_center, w) {
