@@ -237,6 +237,7 @@ fn main() {
                         overlay_icon_slots[last_selected_monitor]
                             .window
                             .set_visible(false);
+                        topmost_reassert_ticks = topmost_reassert_ticks.max(2);
                     }
 
                     last_overlay_icon = overlay_icon;
