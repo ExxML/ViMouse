@@ -25,7 +25,7 @@ use crate::state::{Action, SharedState};
 use crate::state::{Mode, MonitorInfo};
 use pixels::Pixels;
 use rdev::Button;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -188,9 +188,10 @@ fn main() {
         .push(Action::MouseMove(initial_cursor));
 
     let shared = Arc::new(Mutex::new(state));
+    let motion_waker = Arc::new(Condvar::new());
 
-    spawn_input_hook(Arc::clone(&shared));
-    spawn_motion_loop(Arc::clone(&shared));
+    spawn_input_hook(Arc::clone(&shared), Arc::clone(&motion_waker));
+    spawn_motion_loop(Arc::clone(&shared), motion_waker);
 
     let mut last_overlay_icon = current_overlay_icon(&shared);
     let mut last_grid_state = current_grid_state(&shared);

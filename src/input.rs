@@ -8,7 +8,7 @@ use crate::monitor::{clamp_to_virtual_bounds, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
 use crate::platform_input::{shutdown_platform_input, simulate_input, InputEmitter};
-use crate::state::{Action, Mode, Point, Shared, SharedState};
+use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
 use rdev::{Button, Event, EventType, Key};
@@ -27,7 +27,7 @@ struct HookTracker {
     pending_key_events: Vec<(Key, bool)>,
 }
 
-pub fn spawn_input_hook(shared: Shared) {
+pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
     thread::Builder::new()
         .name("vimouse-input-hook".to_string())
         .spawn(move || {
@@ -40,20 +40,20 @@ pub fn spawn_input_hook(shared: Shared) {
                     set_caps_lock_remap(true);
                 }
                 crate::platform_input::macos_grab::run(move |event| {
-                    handle_hook_event(&shared, &tracker, event)
+                    handle_hook_event(&shared, &tracker, &waker, event)
                 });
                 shutdown_platform_input();
             }
 
             #[cfg(not(target_os = "macos"))]
-            if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, event)) {
+            if let Err(error) = grab(move |event| handle_hook_event(&shared, &tracker, &waker, event)) {
                 eprintln!("input hook error: {error:?}");
             }
         })
         .expect("failed to spawn input hook thread");
 }
 
-pub fn spawn_motion_loop(shared: Shared) {
+pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
     thread::Builder::new()
         .name("vimouse-motion-loop".to_string())
         .spawn(move || {
@@ -63,6 +63,14 @@ pub fn spawn_motion_loop(shared: Shared) {
             let mut next_tick = last_tick + frame_time;
 
             loop {
+                // Park until the input hook signals that motion is needed.
+                {
+                    let guard = shared.lock().expect("shared state poisoned");
+                    let _guard = waker
+                        .wait_while(guard, |s| !s.motion_needed)
+                        .expect("condvar wait failed");
+                }
+
                 // Drive movement from elapsed time instead of key-repeat cadence so hold-to-move
                 // feels consistent on different keyboards and refresh rates.
                 let now = Instant::now();
@@ -90,11 +98,12 @@ pub fn spawn_motion_loop(shared: Shared) {
 fn handle_hook_event(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
+    waker: &MotionWaker,
     event: Event,
 ) -> Option<Event> {
     match event.event_type {
-        EventType::KeyPress(key) => handle_key_event(shared, tracker, event, key, true),
-        EventType::KeyRelease(key) => handle_key_event(shared, tracker, event, key, false),
+        EventType::KeyPress(key) => handle_key_event(shared, tracker, waker, event, key, true),
+        EventType::KeyRelease(key) => handle_key_event(shared, tracker, waker, event, key, false),
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
             update_cursor(&mut state, Point { x, y });
@@ -107,6 +116,7 @@ fn handle_hook_event(
 fn handle_key_event(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
+    waker: &MotionWaker,
     event: Event,
     key: Key,
     is_press: bool,
@@ -116,9 +126,9 @@ fn handle_key_event(
     }
 
     let captured = if is_press {
-        handle_key_press(shared, tracker, key)
+        handle_key_press(shared, tracker, key, waker)
     } else {
-        handle_key_release(shared, tracker, key)
+        handle_key_release(shared, tracker, key, waker)
     };
 
     emit_pending_key_events(tracker);
@@ -130,7 +140,7 @@ fn handle_key_event(
     }
 }
 
-fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key) -> bool {
+fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key, waker: &MotionWaker) -> bool {
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     let is_repeat = !tracker.held_keys.insert(key);
 
@@ -185,10 +195,14 @@ fn handle_key_press(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, ke
     }
     sync_runtime_modifier_suppression(&state, &mut tracker);
 
+    state.motion_needed = true;
+    drop(state);
+    waker.notify_one();
+
     true
 }
 
-fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key) -> bool {
+fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, key: Key, waker: &MotionWaker) -> bool {
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     tracker.held_keys.remove(&key);
     let was_captured = tracker.captured_keys.remove(&key);
@@ -197,10 +211,15 @@ fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, 
     let mut state = shared.lock().expect("shared state poisoned");
     update_runtime_modifier_state(&mut state, key, false);
 
+    let mut wake_motion = false;
     if was_captured {
         match key {
             KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
                 state.pressed_keys.remove(&key);
+                if movement_active(&state.pressed_keys) {
+                    state.motion_needed = true;
+                    wake_motion = true;
+                }
             }
             KEY_LEFT_CLICK => release_mouse_button(&mut state, Button::Left),
             KEY_RIGHT_CLICK => release_mouse_button(&mut state, Button::Right),
@@ -209,6 +228,12 @@ fn handle_key_release(shared: &Shared, tracker: &std::sync::Mutex<HookTracker>, 
     }
 
     sync_runtime_modifier_suppression(&state, &mut tracker);
+    drop(state);
+    drop(tracker);
+
+    if wake_motion {
+        waker.notify_one();
+    }
 
     was_captured || was_suppressed
 }
@@ -398,11 +423,13 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64) -> Vec<Action> {
     actions.append(&mut state.pending_actions);
 
     if state.mode != Mode::Normal {
+        state.motion_needed = false;
         return actions;
     }
 
     let direction = normalized_direction(&state.pressed_keys);
     if direction.x == 0.0 && direction.y == 0.0 {
+        state.motion_needed = false;
         return actions;
     }
 

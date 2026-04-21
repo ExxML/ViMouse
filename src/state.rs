@@ -1,6 +1,6 @@
 use rdev::{Button, Key};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -66,6 +66,7 @@ pub struct SharedState {
     pub right_button_down: bool,
     pub pending_actions: Vec<Action>,
     pub show_grid: bool,
+    pub motion_needed: bool,
 }
 
 impl SharedState {
@@ -80,11 +81,13 @@ impl SharedState {
             right_button_down: false,
             pending_actions: Vec::new(),
             show_grid: false,
+            motion_needed: true,
         }
     }
 }
 
 pub type Shared = Arc<Mutex<SharedState>>;
+pub type MotionWaker = Arc<Condvar>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
