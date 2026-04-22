@@ -1,4 +1,6 @@
-use crate::state::{Action, Point};
+use crate::state::Action;
+#[cfg(target_os = "macos")]
+use crate::state::Point;
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
