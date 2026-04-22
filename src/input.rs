@@ -235,8 +235,16 @@ fn handle_key_release(
                     wake_motion = true;
                 }
             }
-            KEY_LEFT_CLICK => release_mouse_button(&mut state, Button::Left),
-            KEY_RIGHT_CLICK => release_mouse_button(&mut state, Button::Right),
+            KEY_LEFT_CLICK => {
+                release_mouse_button(&mut state, Button::Left);
+                state.motion_needed = true;
+                wake_motion = true;
+            }
+            KEY_RIGHT_CLICK => {
+                release_mouse_button(&mut state, Button::Right);
+                state.motion_needed = true;
+                wake_motion = true;
+            }
             _ => {}
         }
     }
