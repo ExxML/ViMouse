@@ -1,6 +1,8 @@
 use rdev::{Button, Key};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -67,6 +69,7 @@ pub struct SharedState {
     pub pending_actions: Vec<Action>,
     pub show_grid: bool,
     pub motion_needed: bool,
+    pub move_key_pressed_at: HashMap<Key, Instant>,
 }
 
 impl SharedState {
@@ -82,6 +85,7 @@ impl SharedState {
             pending_actions: Vec::new(),
             show_grid: false,
             motion_needed: true,
+            move_key_pressed_at: HashMap::new(),
         }
     }
 }

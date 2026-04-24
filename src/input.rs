@@ -1,8 +1,9 @@
 use crate::config::{
-    FAST_MULTIPLIER, JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
-    KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
-    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, MOVE_SPEED_PX_PER_SEC,
-    SCROLL_SPEED_UNITS_PER_SEC, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    ACCEL_DELAY_SECS, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER,
+    JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_LEFT_CLICK,
+    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_RIGHT_CLICK,
+    KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -230,6 +231,7 @@ fn handle_key_release(
         match key {
             KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
                 state.pressed_keys.remove(&key);
+                state.move_key_pressed_at.remove(&key);
                 if movement_active(&state.pressed_keys) {
                     state.motion_needed = true;
                     wake_motion = true;
@@ -270,6 +272,10 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
         KEY_TOGGLE_GRID => state.show_grid = !state.show_grid,
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
             state.pressed_keys.insert(key);
+            state
+                .move_key_pressed_at
+                .entry(key)
+                .or_insert_with(Instant::now);
         }
         _ if is_jump_key(key) => queue_jump(state, key),
         _ => {}
@@ -279,12 +285,14 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
 fn enter_insert_mode(state: &mut SharedState) {
     state.mode = Mode::Insert;
     state.pressed_keys.clear();
+    state.move_key_pressed_at.clear();
     release_all_buttons(state);
 }
 
 fn enter_normal_mode(state: &mut SharedState, held_keys: &HashSet<Key>) {
     state.mode = Mode::Normal;
     state.pressed_keys.clear();
+    state.move_key_pressed_at.clear();
 
     for key in held_keys {
         if is_runtime_modifier(*key) {
@@ -442,17 +450,34 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
         return;
     }
 
+    // Elapsed time = minimum hold duration among active move keys (most recently pressed wins).
+    let now = Instant::now();
+    let move_elapsed = active_move_elapsed(&state, now);
+
     if scroll_mode_active(&state.pressed_keys) {
-        let delta_x = -direction.x * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
-        let delta_y = -direction.y * SCROLL_SPEED_UNITS_PER_SEC * speed_multiplier * delta_seconds;
+        let speed = acceleration_speed(
+            move_elapsed,
+            SCROLL_BASE_SPEED,
+            SCROLL_ACCELERATION,
+            SCROLL_MAX_SPEED,
+        ) * speed_multiplier;
+        let delta_x = -direction.x * speed * delta_seconds;
+        let delta_y = -direction.y * speed * delta_seconds;
         actions.push(Action::Scroll { delta_x, delta_y });
         return;
     }
 
+    let speed = acceleration_speed(
+        move_elapsed,
+        CURSOR_BASE_SPEED,
+        CURSOR_ACCELERATION,
+        CURSOR_MAX_SPEED,
+    ) * speed_multiplier;
+
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
-    next_cursor.x += direction.x * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
-    next_cursor.y += direction.y * MOVE_SPEED_PX_PER_SEC * speed_multiplier * delta_seconds;
+    next_cursor.x += direction.x * speed * delta_seconds;
+    next_cursor.y += direction.y * speed * delta_seconds;
 
     if let Some(index) = clamp_and_find_monitor(&mut next_cursor, &state.monitors) {
         if next_cursor != previous_cursor {
@@ -460,6 +485,25 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
             state.selected_monitor = index;
             actions.push(Action::MouseMove(state.cursor));
         }
+    }
+}
+
+/// Minimum elapsed seconds among currently active move keys (the most recently pressed key).
+fn active_move_elapsed(state: &SharedState, now: Instant) -> f64 {
+    MOVE_KEYS
+        .iter()
+        .filter(|k| state.pressed_keys.contains(*k))
+        .filter_map(|k| state.move_key_pressed_at.get(k))
+        .map(|t| now.saturating_duration_since(*t).as_secs_f64())
+        .fold(f64::INFINITY, f64::min)
+        .max(0.0)
+}
+
+fn acceleration_speed(elapsed_secs: f64, base: f64, accel: f64, max: f64) -> f64 {
+    if elapsed_secs < ACCEL_DELAY_SECS {
+        base
+    } else {
+        (base + accel * (elapsed_secs - ACCEL_DELAY_SECS)).min(max)
     }
 }
 
