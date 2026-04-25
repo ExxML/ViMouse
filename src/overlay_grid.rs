@@ -46,30 +46,24 @@ pub struct GridOverlayState {
     pub monitor: MonitorInfo,
 }
 
-// Per-platform grid surface state.
+// Per-platform grid surface state. The inner implementation is created lazily on first show
+// to avoid allocating the pixel cache and GPU resources at startup.
 pub struct GridSurface {
-    imp: GridSurfaceImp,
-    // Last monitor the window was sized/positioned for; None before first prime.
+    imp: Option<GridSurfaceImp>,
+    // Last monitor the window was sized/positioned for; None before first show.
     positioned_monitor: Option<MonitorInfo>,
 }
 
 impl GridSurface {
-    pub fn new(window: &Window, initial_monitor: &MonitorInfo) -> Self {
-        let (w, h) = monitor_size_physical(initial_monitor);
+    pub fn new(_window: &Window, _initial_monitor: &MonitorInfo) -> Self {
         Self {
-            imp: GridSurfaceImp::new(window, w, h),
+            imp: None,
             positioned_monitor: None,
         }
     }
 
-    pub fn prime(&mut self, window: &Window, monitor: &MonitorInfo) {
-        let (w, h) = monitor_size_physical(monitor);
-        set_grid_window_size(window, monitor, w, h);
-        self.imp.paint(window, w, h);
-        position_grid_window(window, monitor);
-        self.positioned_monitor = Some(*monitor);
-        window.set_visible(false);
-    }
+    // prime() is kept for API compatibility but is now a no-op — initialization is lazy.
+    pub fn prime(&mut self, _window: &Window, _monitor: &MonitorInfo) {}
 
     pub fn update(&mut self, window: &Window, state: &GridOverlayState) {
         if !state.visible {
@@ -77,13 +71,17 @@ impl GridSurface {
             return;
         }
         let (w, h) = monitor_size_physical(&state.monitor);
+        // Create the surface implementation the first time the grid is shown.
+        if self.imp.is_none() {
+            self.imp = Some(GridSurfaceImp::new(window, w, h));
+        }
         // Skip redundant OS resize/reposition calls when the monitor hasn't changed.
         if self.positioned_monitor != Some(state.monitor) {
             set_grid_window_size(window, &state.monitor, w, h);
             position_grid_window(window, &state.monitor);
             self.positioned_monitor = Some(state.monitor);
         }
-        self.imp.paint(window, w, h);
+        self.imp.as_mut().unwrap().paint(window, w, h);
         window.set_visible(true);
     }
 }
@@ -92,27 +90,24 @@ impl GridSurface {
 
 #[cfg(target_os = "windows")]
 struct GridSurfaceImp {
-    // Pre-computed BGRA pixel cache. Rebuilt only when monitor size changes.
+    // Pre-computed BGRA pixel cache. Empty until first paint; rebuilt on size change.
     pixel_cache: Vec<u32>,
     texture_size: (u32, u32),
 }
 
 #[cfg(target_os = "windows")]
 impl GridSurfaceImp {
-    fn new(_window: &Window, w: u32, h: u32) -> Self {
-        let pixel_count = (w * h) as usize;
-        let mut pixel_cache = vec![0u32; pixel_count];
-        fill_grid_bgra_premult(&mut pixel_cache, w as usize, h as usize);
+    fn new(_window: &Window, _w: u32, _h: u32) -> Self {
         Self {
-            pixel_cache,
-            texture_size: (w, h),
+            pixel_cache: Vec::new(),
+            texture_size: (0, 0),
         }
     }
 
     fn paint(&mut self, window: &Window, w: u32, h: u32) {
         let hwnd = window.hwnd() as HWND;
 
-        // Rebuild cache only when size changes.
+        // Build or rebuild cache when size changes.
         if self.texture_size != (w, h) {
             let pixel_count = (w * h) as usize;
             self.pixel_cache = vec![0u32; pixel_count];
@@ -235,10 +230,8 @@ fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
 
 // ── macOS / Linux implementation (raw wgpu with correct transparent alpha mode) ─
 
-// pixels::wgpu re-exports the wgpu crate used internally by pixels, so we stay
-// on the same version without adding a separate dependency.
 #[cfg(not(target_os = "windows"))]
-use pixels::wgpu;
+use wgpu;
 
 #[cfg(not(target_os = "windows"))]
 struct GridSurfaceImp {

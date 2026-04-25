@@ -1,7 +1,6 @@
 use crate::config::{OverlayIconPos, OVERLAY_ICON_POSITION, OVERLAY_ICON_SIZE_MONITOR_FRACTION};
 use crate::state::{Mode, MonitorInfo};
 use font8x8::{UnicodeFonts, BASIC_FONTS};
-use pixels::{Error, Pixels, SurfaceTexture};
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
@@ -36,6 +35,20 @@ pub struct OverlayIconState {
     pub monitor: MonitorInfo,
 }
 
+pub struct IconSurface {
+    surface: softbuffer::Surface,
+}
+
+impl IconSurface {
+    pub fn new(window: &Window) -> Self {
+        let context = unsafe { softbuffer::Context::new(window) }
+            .expect("softbuffer context creation failed");
+        let surface = unsafe { softbuffer::Surface::new(&context, window) }
+            .expect("softbuffer surface creation failed");
+        Self { surface }
+    }
+}
+
 pub fn create_event_loop() -> EventLoop<()> {
     let mut builder = EventLoopBuilder::new();
 
@@ -48,7 +61,6 @@ pub fn create_event_loop() -> EventLoop<()> {
 
     #[cfg(target_os = "linux")]
     {
-        // The Linux input and cursor backends already rely on X11 APIs.
         builder.with_x11();
     }
 
@@ -64,7 +76,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
             .with_visible(false)
             .with_active(false)
             .with_window_level(WindowLevel::AlwaysOnTop)
-            .with_inner_size(PhysicalSize::new(1, 1)),
+            .with_inner_size(PhysicalSize::new(1u32, 1u32)),
     )
     .build(event_loop)
     .expect("failed to create overlay window");
@@ -78,22 +90,32 @@ pub fn show_overlay_icon_window(window: &Window) {
     finalize_overlay_window(window);
 }
 
-pub fn create_pixels(window: &Window) -> Pixels {
-    let window_size = window.inner_size();
-    let surface = SurfaceTexture::new(window_size.width, window_size.height, window);
-    Pixels::new(window_size.width, window_size.height, surface).expect("pixels init failed")
-}
-
-// Overlay icon painting is intentionally tiny: draw the square, present it, then move the window.
-// Position is set after rendering so the compositor never shows stale content at the new location.
 pub fn paint_overlay_icon(
     window: &Window,
-    pixels: &mut Pixels,
+    icon_surface: &mut IconSurface,
     overlay: &OverlayIconState,
-) -> Result<(), Error> {
-    let inner_size = sync_overlay_size(window, pixels, &overlay.monitor)?;
-    draw_overlay(pixels.frame_mut(), overlay.mode, inner_size.width as usize);
-    pixels.render()?;
+) -> Result<(), String> {
+    let inner_size = sync_overlay_size(window, icon_surface, &overlay.monitor)?;
+    let (w, h) = (inner_size.width, inner_size.height);
+
+    let mut buffer = icon_surface
+        .surface
+        .buffer_mut()
+        .map_err(|e| format!("softbuffer buffer_mut: {e:?}"))?;
+
+    let frame_len = (w * h) as usize;
+    let mut frame: Vec<u8> = vec![0u8; frame_len * 4];
+    draw_overlay(&mut frame, overlay.mode, w as usize);
+
+    // softbuffer uses 0RGB packed u32 (high byte ignored, then R, G, B)
+    for (i, pixel) in buffer.iter_mut().take(frame_len).enumerate() {
+        let r = frame[i * 4] as u32;
+        let g = frame[i * 4 + 1] as u32;
+        let b = frame[i * 4 + 2] as u32;
+        *pixel = (r << 16) | (g << 8) | b;
+    }
+
+    buffer.present().map_err(|e| format!("softbuffer present: {e:?}"))?;
     position_overlay(window, &overlay.monitor, inner_size);
     Ok(())
 }
@@ -104,22 +126,27 @@ fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
         .max(1.0) as u32
 }
 
-// Ensures the pixels buffer/surface matches the monitor size. Hides the window briefly if a resize
-// is needed so the compositor never shows a stale frame. Returns the target inner size.
 fn sync_overlay_size(
     window: &Window,
-    pixels: &mut Pixels,
+    icon_surface: &mut IconSurface,
     monitor: &MonitorInfo,
-) -> Result<PhysicalSize<u32>, Error> {
+) -> Result<PhysicalSize<u32>, String> {
     let overlay_size = overlay_size_for_monitor(*monitor);
     let inner_size = overlay_inner_size(monitor, overlay_size);
+    let (w, h) = (inner_size.width, inner_size.height);
 
     if window.inner_size() != inner_size {
         window.set_visible(false);
         set_overlay_inner_size(window, monitor, overlay_size);
-        pixels.resize_buffer(inner_size.width, inner_size.height)?;
-        pixels.resize_surface(inner_size.width, inner_size.height)?;
     }
+
+    icon_surface
+        .surface
+        .resize(
+            std::num::NonZeroU32::new(w.max(1)).unwrap(),
+            std::num::NonZeroU32::new(h.max(1)).unwrap(),
+        )
+        .map_err(|e| format!("softbuffer resize: {e:?}"))?;
 
     Ok(inner_size)
 }
@@ -184,7 +211,6 @@ fn position_overlay(window: &Window, monitor: &MonitorInfo, inner_size: Physical
 }
 
 fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
-    // Fill the whole square first so there is never an unpainted border.
     let [r, g, b, a] = mode.background();
     for chunk in frame.chunks_exact_mut(4) {
         chunk[0] = r;
@@ -196,7 +222,6 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
     let glyph = BASIC_FONTS
         .get(mode.label())
         .expect("overlay glyph should exist");
-    // Preserve the original apparent text size while scaling with larger overlays.
     let scale = ((overlay_size * 3) + 20) / 40;
     let scale = scale.max(1);
     let mut min_col = 8usize;
@@ -208,15 +233,12 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
         if *bits == 0 {
             continue;
         }
-
         min_row = min_row.min(row);
         max_row = max_row.max(row);
-
         for col in 0..8usize {
             if (bits >> col) & 1 == 0 {
                 continue;
             }
-
             min_col = min_col.min(col);
             max_col = max_col.max(col);
         }
@@ -224,7 +246,6 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
 
     let glyph_width = (max_col - min_col + 1) * scale;
     let glyph_height = (max_row - min_row + 1) * scale;
-    // Center the actual painted glyph bounds, not the full 8x8 font cell.
     let offset_x = (overlay_size - glyph_width) / 2;
     let offset_y = (overlay_size - glyph_height) / 2;
 
@@ -233,7 +254,6 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
             if (bits >> col) & 1 == 0 {
                 continue;
             }
-
             for dy in 0..scale {
                 for dx in 0..scale {
                     let px = offset_x + ((col - min_col) * scale) + dx;
@@ -250,13 +270,11 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
 }
 
 #[cfg(target_os = "windows")]
-// Prevent the overlay from showing in Alt+Tab
 fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
     builder.with_skip_taskbar(true)
 }
 
 #[cfg(target_os = "linux")]
-// Set the _NET_WM_WINDOW_TYPE to Notification so the window manager treats it as a transient overlay
 fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
     builder
         .with_override_redirect(true)
@@ -274,7 +292,6 @@ fn configure_overlay_window(window: &Window) {
 }
 
 #[cfg(not(target_os = "windows"))]
-// Click-through keeps the overlay from stealing interaction on platforms where winit supports it.
 fn configure_overlay_hittest(window: &Window) {
     let _ = window.set_cursor_hittest(false);
 }
@@ -321,8 +338,6 @@ fn configure_platform_overlay_window(window: &Window) {
 fn configure_platform_overlay_window(_window: &Window) {}
 
 #[cfg(target_os = "windows")]
-// Prevent the overlay icon from being focusable. Uses SWP_NOZORDER so z-order is unchanged
-// (winit already set HWND_TOPMOST via WindowLevel::AlwaysOnTop at creation time).
 fn finalize_overlay_window(window: &Window) {
     unsafe {
         let hwnd = window.hwnd() as HWND;

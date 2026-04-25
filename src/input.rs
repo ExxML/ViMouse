@@ -31,6 +31,7 @@ struct HookTracker {
 pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
     thread::Builder::new()
         .name("vimouse-input-hook".to_string())
+        .stack_size(512 * 1024)
         .spawn(move || {
             let tracker = std::sync::Mutex::new(HookTracker::default());
 
@@ -59,6 +60,7 @@ pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
 pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
     thread::Builder::new()
         .name("vimouse-motion-loop".to_string())
+        .stack_size(256 * 1024)
         .spawn(move || {
             let mut emitter = InputEmitter::new();
             let frame_time = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);

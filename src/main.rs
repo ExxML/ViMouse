@@ -17,13 +17,12 @@ use crate::monitor::collect_monitors;
 use crate::overlay_grid::GridOverlayState;
 use crate::overlay_grid::{create_grid_window, GridSurface};
 use crate::overlay_icon::{
-    create_event_loop, create_pixels, create_window, paint_overlay_icon, reassert_topmost,
-    show_overlay_icon_window, OverlayIconState,
+    create_event_loop, create_window, paint_overlay_icon, reassert_topmost,
+    show_overlay_icon_window, IconSurface, OverlayIconState,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
 use crate::state::{Mode, MonitorInfo};
-use pixels::Pixels;
 use rdev::Button;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -59,7 +58,7 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
 
 struct OverlayIconSlot {
     window: Window,
-    pixels: Pixels,
+    surface: IconSurface,
     monitor: MonitorInfo,
 }
 
@@ -74,7 +73,7 @@ fn create_overlay_icon_slots(
     first_window: Window,
     monitors: &[MonitorInfo],
     mode: Mode,
-) -> Result<Vec<OverlayIconSlot>, pixels::Error> {
+) -> Result<Vec<OverlayIconSlot>, String> {
     let mut windows = Vec::with_capacity(monitors.len());
     windows.push(first_window);
     for _ in 1..monitors.len() {
@@ -83,13 +82,13 @@ fn create_overlay_icon_slots(
 
     let mut slots = Vec::with_capacity(monitors.len());
     for (window, monitor) in windows.into_iter().zip(monitors.iter().copied()) {
-        let mut pixels = create_pixels(&window);
+        let mut surface = IconSurface::new(&window);
         let overlay = OverlayIconState { mode, monitor };
-        paint_overlay_icon(&window, &mut pixels, &overlay)?;
+        paint_overlay_icon(&window, &mut surface, &overlay)?;
         window.set_visible(false);
         slots.push(OverlayIconSlot {
             window,
-            pixels,
+            surface,
             monitor,
         });
     }
@@ -140,7 +139,7 @@ fn paint_overlay_icon_slot_or_exit(
         mode,
         monitor: slot.monitor,
     };
-    match paint_overlay_icon(&slot.window, &mut slot.pixels, &overlay) {
+    match paint_overlay_icon(&slot.window, &mut slot.surface, &overlay) {
         Ok(()) if show => show_overlay_icon_window(&slot.window),
         Ok(()) => slot.window.set_visible(false),
         Err(error) => {
@@ -183,7 +182,6 @@ fn main() {
     let bootstrap_window = create_window(&event_loop);
     let bootstrap_grid_window = create_grid_window(&event_loop);
 
-    // Discover monitors first so the initial cursor state and overlay use the same coordinate space.
     let monitors = collect_monitors(&bootstrap_window);
     let initial_cursor = monitors
         .first()
@@ -254,9 +252,6 @@ fn main() {
     };
     show_overlay_icon_window(&overlay_icon_slots[last_selected_monitor].window);
 
-    // Ticks remaining before reasserting icon topmost after grid hides.
-    // The taskbar raises itself asynchronously in response to the grid hide, so we wait a few
-    // pump cycles before reclaiming topmost to ensure we win the race.
     let mut topmost_reassert_ticks: u8 = 0;
 
     event_loop.run(move |event, _, control_flow| {
