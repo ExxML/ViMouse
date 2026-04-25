@@ -10,6 +10,7 @@ category = "Utility"
 
 [dependencies]
 ctrlc = "3"
+fs2 = "0.4"
 font8x8 = "0.3"
 rdev = { version = "0.5", features = ["unstable_grab"] }
 softbuffer = { version = "0.3", default-features = false, features = ["x11", "x11-dlopen"] }

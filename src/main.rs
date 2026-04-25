@@ -23,6 +23,7 @@ use crate::overlay_icon::{
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
 use crate::state::{Mode, MonitorInfo};
+use fs2::FileExt;
 use rdev::Button;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -161,6 +162,16 @@ fn update_grid_slot(slot: &mut GridSlot, visible: bool) {
 }
 
 fn main() {
+    let lock_path = std::env::temp_dir().join("vimouse.lock");
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("failed to open lock file");
+    if lock_file.try_lock_exclusive().is_err() {
+        return;
+    }
+
     #[cfg(target_os = "macos")]
     if !crate::platform_input::macos_grab::is_accessibility_trusted(true) {
         eprintln!("Accessibility permission required. Grant access in System Settings → Privacy & Security → Accessibility, then relaunch.");
