@@ -104,7 +104,7 @@ Uses [`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) to produce a n
 cargo install cargo-bundle
 cargo bundle --release
 ```
-- Bundling is preferred over running a plain Unix executable as a terminal window opens on launch by default. If you would rather, `cargo build --release` works fine as well.
+Bundling is preferred over running a plain Unix executable because a terminal window opens on launch by default. If you would rather, `cargo build --release` works fine as well.
 
 This program can be ran from `target/release/bundle/osx/ViMouse.app`.
 - ViMouse requires Accessibility permission to intercept input. On first launch, ViMouse will prompt you to grant it under **System Settings → Privacy & Security → Accessibility**.
