@@ -470,34 +470,31 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
         return;
     }
 
-    // Elapsed time = minimum hold duration among active move keys (most recently pressed wins).
     let now = Instant::now();
-    let move_elapsed = active_move_elapsed(&state, now);
+    let elapsed_h = key_elapsed(&state, KEY_MOVE_LEFT, now);
+    let elapsed_j = key_elapsed(&state, KEY_MOVE_DOWN, now);
+    let elapsed_k = key_elapsed(&state, KEY_MOVE_UP, now);
+    let elapsed_l = key_elapsed(&state, KEY_MOVE_RIGHT, now);
+    // Per-axis elapsed: oldest held key wins so both directions in a diagonal accelerate independently.
+    let elapsed_x = elapsed_h.max(elapsed_l);
+    let elapsed_y = elapsed_j.max(elapsed_k);
 
     if scroll_mode_active(&state.pressed_keys) {
-        let speed = acceleration_speed(
-            move_elapsed,
-            SCROLL_BASE_SPEED,
-            SCROLL_ACCELERATION,
-            SCROLL_MAX_SPEED,
-        ) * speed_multiplier;
-        let delta_x = -direction.x * speed * delta_seconds;
-        let delta_y = -direction.y * speed * delta_seconds;
+        let speed_x = acceleration_speed(elapsed_x, SCROLL_BASE_SPEED, SCROLL_ACCELERATION, SCROLL_MAX_SPEED) * speed_multiplier;
+        let speed_y = acceleration_speed(elapsed_y, SCROLL_BASE_SPEED, SCROLL_ACCELERATION, SCROLL_MAX_SPEED) * speed_multiplier;
+        let delta_x = -direction.x * speed_x * delta_seconds;
+        let delta_y = -direction.y * speed_y * delta_seconds;
         actions.push(Action::Scroll { delta_x, delta_y });
         return;
     }
 
-    let speed = acceleration_speed(
-        move_elapsed,
-        CURSOR_BASE_SPEED,
-        CURSOR_ACCELERATION,
-        CURSOR_MAX_SPEED,
-    ) * speed_multiplier;
+    let speed_x = acceleration_speed(elapsed_x, CURSOR_BASE_SPEED, CURSOR_ACCELERATION, CURSOR_MAX_SPEED) * speed_multiplier;
+    let speed_y = acceleration_speed(elapsed_y, CURSOR_BASE_SPEED, CURSOR_ACCELERATION, CURSOR_MAX_SPEED) * speed_multiplier;
 
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
-    next_cursor.x += direction.x * speed * delta_seconds;
-    next_cursor.y += direction.y * speed * delta_seconds;
+    next_cursor.x += direction.x * speed_x * delta_seconds;
+    next_cursor.y += direction.y * speed_y * delta_seconds;
 
     if let Some(index) = clamp_and_find_monitor(&mut next_cursor, &state.monitors) {
         if next_cursor != previous_cursor {
@@ -508,15 +505,12 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
     }
 }
 
-/// Minimum elapsed seconds among currently active move keys (the most recently pressed key).
-fn active_move_elapsed(state: &SharedState, now: Instant) -> f64 {
-    MOVE_KEYS
-        .iter()
-        .filter(|k| state.pressed_keys.contains(*k))
-        .filter_map(|k| state.move_key_pressed_at.get(k))
+fn key_elapsed(state: &SharedState, key: Key, now: Instant) -> f64 {
+    state
+        .move_key_pressed_at
+        .get(&key)
         .map(|t| now.saturating_duration_since(*t).as_secs_f64())
-        .fold(f64::INFINITY, f64::min)
-        .max(0.0)
+        .unwrap_or(0.0)
 }
 
 fn acceleration_speed(elapsed_secs: f64, base: f64, accel: f64, max: f64) -> f64 {
