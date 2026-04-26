@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
+use winit::event_loop::EventLoopProxy;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -92,6 +93,8 @@ impl SharedState {
 
 pub type Shared = Arc<Mutex<SharedState>>;
 pub type MotionWaker = Arc<Condvar>;
+// Sends a () event to wake the winit event loop when UI-visible state changes.
+pub type UiWaker = EventLoopProxy<()>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Action {

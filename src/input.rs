@@ -9,7 +9,7 @@ use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
 use crate::platform_input::{shutdown_platform_input, simulate_input, InputEmitter};
-use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState};
+use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
 use rdev::{Button, Event, EventType, Key};
@@ -28,7 +28,7 @@ struct HookTracker {
     pending_key_events: Vec<(Key, bool)>,
 }
 
-pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
+pub fn spawn_input_hook(shared: Shared, waker: MotionWaker, ui_waker: UiWaker) {
     thread::Builder::new()
         .name("vimouse-input-hook".to_string())
         .stack_size(512 * 1024)
@@ -42,14 +42,14 @@ pub fn spawn_input_hook(shared: Shared, waker: MotionWaker) {
                     set_caps_lock_remap(true);
                 }
                 crate::platform_input::macos_grab::run(move |event| {
-                    handle_hook_event(&shared, &tracker, &waker, event)
+                    handle_hook_event(&shared, &tracker, &waker, &ui_waker, event)
                 });
                 shutdown_platform_input();
             }
 
             #[cfg(not(target_os = "macos"))]
             if let Err(error) =
-                grab(move |event| handle_hook_event(&shared, &tracker, &waker, event))
+                grab(move |event| handle_hook_event(&shared, &tracker, &waker, &ui_waker, event))
             {
                 eprintln!("input hook error: {error:?}");
             }
@@ -106,11 +106,16 @@ fn handle_hook_event(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
     waker: &MotionWaker,
+    ui_waker: &UiWaker,
     event: Event,
 ) -> Option<Event> {
     match event.event_type {
-        EventType::KeyPress(key) => handle_key_event(shared, tracker, waker, event, key, true),
-        EventType::KeyRelease(key) => handle_key_event(shared, tracker, waker, event, key, false),
+        EventType::KeyPress(key) => {
+            handle_key_event(shared, tracker, waker, ui_waker, event, key, true)
+        }
+        EventType::KeyRelease(key) => {
+            handle_key_event(shared, tracker, waker, ui_waker, event, key, false)
+        }
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
             update_cursor(&mut state, Point { x, y });
@@ -124,6 +129,7 @@ fn handle_key_event(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
     waker: &MotionWaker,
+    ui_waker: &UiWaker,
     event: Event,
     key: Key,
     is_press: bool,
@@ -133,7 +139,7 @@ fn handle_key_event(
     }
 
     let captured = if is_press {
-        handle_key_press(shared, tracker, key, waker)
+        handle_key_press(shared, tracker, key, waker, ui_waker)
     } else {
         handle_key_release(shared, tracker, key, waker)
     };
@@ -152,6 +158,7 @@ fn handle_key_press(
     tracker: &std::sync::Mutex<HookTracker>,
     key: Key,
     waker: &MotionWaker,
+    ui_waker: &UiWaker,
 ) -> bool {
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     let is_repeat = !tracker.held_keys.insert(key);
@@ -201,15 +208,26 @@ fn handle_key_press(
 
     tracker.captured_keys.insert(key);
 
+    // Snapshot UI-visible state before applying the key action so we can detect changes.
+    let ui_before = ui_snapshot(&state);
+
     match state.mode {
         Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
         Mode::Normal => apply_normal_mode_press(&mut state, key),
     }
     sync_runtime_modifier_suppression(&state, &mut tracker);
 
+    // Wake the overlay event loop only when UI-visible state actually changed.
+    let ui_changed = ui_snapshot(&state) != ui_before;
+
     state.motion_needed = true;
     drop(state);
     waker.notify_one();
+
+    // was: event loop polled every 33ms — now woken only on actual UI change
+    if ui_changed {
+        let _ = ui_waker.send_event(());
+    }
 
     true
 }
@@ -702,6 +720,23 @@ fn is_jump_key(key: Key) -> bool {
 
 fn is_runtime_modifier(key: Key) -> bool {
     key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
+}
+
+/// Captures the subset of SharedState that drives overlay rendering.
+/// Used to detect whether a key press changed anything the UI cares about.
+#[derive(PartialEq)]
+struct UiStateSnapshot {
+    mode: Mode,
+    show_grid: bool,
+    selected_monitor: usize,
+}
+
+fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
+    UiStateSnapshot {
+        mode: state.mode,
+        show_grid: state.show_grid,
+        selected_monitor: state.selected_monitor,
+    }
 }
 
 pub fn caps_lock_used_in_config() -> bool {

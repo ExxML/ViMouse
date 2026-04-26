@@ -26,7 +26,7 @@ use crate::state::{Mode, MonitorInfo};
 use fs2::FileExt;
 use rdev::Button;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
@@ -217,8 +217,10 @@ fn main() {
 
     let shared = Arc::new(Mutex::new(state));
     let motion_waker = Arc::new(Condvar::new());
+    // Proxy lets the input hook thread wake the winit event loop without polling.
+    let ui_waker = event_loop.create_proxy();
 
-    spawn_input_hook(Arc::clone(&shared), Arc::clone(&motion_waker));
+    spawn_input_hook(Arc::clone(&shared), Arc::clone(&motion_waker), ui_waker);
     spawn_motion_loop(Arc::clone(&shared), motion_waker);
 
     let (mut last_overlay_icon, mut last_grid_state, monitors) = {
@@ -263,13 +265,19 @@ fn main() {
     };
     show_overlay_icon_window(&overlay_icon_slots[last_selected_monitor].window);
 
-    let mut topmost_reassert_ticks: u8 = 0;
+    // Time-based replacement for the old tick counter: reassert topmost ~66ms after grid hides.
+    let mut topmost_reassert_at: Option<Instant> = None;
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(33));
+        // was: WaitUntil(33ms) unconditionally — caused ~30 wakeups/sec at idle.
+        // Now: block indefinitely; wake only via UserEvent from the input hook or a pending timer.
+        *control_flow = match topmost_reassert_at {
+            Some(deadline) => ControlFlow::WaitUntil(deadline),
+            None => ControlFlow::Wait,
+        };
 
         match event {
-            WinitEvent::MainEventsCleared => {
+            WinitEvent::MainEventsCleared | WinitEvent::UserEvent(()) => {
                 let snap = current_ui_snapshot(&shared);
                 let selected_monitor = snap.selected_monitor;
 
@@ -306,17 +314,17 @@ fn main() {
                     last_grid_state = grid_state;
                     update_grid_slot(&mut grid_slots[selected_monitor], last_grid_state.visible);
                     if was_visible && !last_grid_state.visible {
-                        topmost_reassert_ticks = 2;
+                        // Schedule topmost reassert ~66ms after grid hides (replaces 2-tick countdown).
+                        topmost_reassert_at =
+                            Some(Instant::now() + std::time::Duration::from_millis(66));
                     }
                 }
 
                 last_selected_monitor = selected_monitor;
 
-                if topmost_reassert_ticks > 0 {
-                    topmost_reassert_ticks -= 1;
-                    if topmost_reassert_ticks == 0 {
-                        reassert_topmost(&overlay_icon_slots[last_selected_monitor].window);
-                    }
+                if topmost_reassert_at.is_some_and(|d| Instant::now() >= d) {
+                    topmost_reassert_at = None;
+                    reassert_topmost(&overlay_icon_slots[last_selected_monitor].window);
                 }
             }
             WinitEvent::WindowEvent { window_id, event } => match event {
