@@ -4,20 +4,6 @@ Efficiently control your cursor with only a keyboard.
 
 Supports macOS, Windows, and Linux.
 
-## Table of Contents
-
-- [Usage](#usage)
-  - [Cursor Movement](#cursor-movement)
-  - [Scrolling](#scrolling)
-  - [Clicking](#clicking)
-  - [Jump Grid](#jump-grid)
-  - [Other Controls](#other-controls)
-- [Installation](#installation)
-  - [Prerequisites](#prerequisites)
-  - [macOS / Linux](#macos--linux)
-  - [Windows](#windows)
-- [License](#license)
-
 ## Usage
 
 > [!NOTE]
@@ -33,6 +19,8 @@ ViMouse has two modes, toggled like Vim:
 A small overlay badge in the bottom-left corner of your screen shows the current mode.
 
 While in Normal mode, only ViMouse keybinds are suppressed; all other keys pass through as usual.
+
+---
 
 ### Cursor Movement
 
@@ -56,11 +44,15 @@ Movement accelerates the longer you hold: starts at 100 px/s and ramps up to 240
 > [!TIP]
 > Hold two movement keys simultaneously to move diagonally.
 
+---
+
 ### Scrolling
 
 Hold `Left Shift` + `H` / `J` / `K` / `L` to scroll.
 
 Like cursor movement, scrolling also features acceleration and `Space` / `Alt` speed modifiers.
+
+---
 
 ### Clicking
 
@@ -68,6 +60,8 @@ Like cursor movement, scrolling also features acceleration and `Space` / `Alt` s
 |-----|--------|
 | `;` | Left click |
 | `'` | Right click |
+
+---
 
 ### Jump Grid
 
@@ -85,6 +79,8 @@ The screen is divided into a 5×3 grid - press the labeled key to warp the curso
 - Press `Right Shift` to toggle a reference grid overlay to serve as a guide for where to jump.
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
+
+---
 
 ### Other Controls
 
