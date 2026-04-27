@@ -59,6 +59,8 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
     [Key::KeyA, Key::KeyS, Key::KeyD, Key::KeyF, Key::KeyG],
     [Key::KeyZ, Key::KeyX, Key::KeyC, Key::KeyV, Key::KeyB],
 ];
+// Seconds to wait for the second jump grid key (subcell jump)
+pub const JUMP_GRID_DELAY: f64 = 1.0;
 // Toggle jump grid overlay (Normal mode only)
 pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
 

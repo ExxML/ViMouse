@@ -3,7 +3,7 @@ use crate::config::{
     JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_LEFT_CLICK,
     KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_RIGHT_CLICK,
     KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
-    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ, JUMP_GRID_DELAY,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -349,7 +349,6 @@ fn cycle_monitor(state: &mut SharedState) {
     }
 }
 
-const SUBCELL_TIMEOUT: Duration = Duration::from_secs(1);
 
 fn queue_jump(state: &mut SharedState, key: Key) {
     let Some(monitor) = state.monitors.get(state.selected_monitor).copied() else {
@@ -357,7 +356,7 @@ fn queue_jump(state: &mut SharedState, key: Key) {
     };
 
     if let Some((cell_col, cell_row, pressed_at)) = state.pending_subcell.take() {
-        if pressed_at.elapsed() <= SUBCELL_TIMEOUT {
+        if pressed_at.elapsed() <= Duration::from_secs_f64(JUMP_GRID_DELAY) {
             if let Some(target) = subcell_target(monitor, cell_col, cell_row, key) {
                 update_cursor(state, target);
                 state.pending_actions.push(Action::MouseMove(state.cursor));
