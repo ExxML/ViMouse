@@ -115,7 +115,9 @@ pub fn paint_overlay_icon(
         *pixel = (r << 16) | (g << 8) | b;
     }
 
-    buffer.present().map_err(|e| format!("softbuffer present: {e:?}"))?;
+    buffer
+        .present()
+        .map_err(|e| format!("softbuffer present: {e:?}"))?;
     position_overlay(window, &overlay.monitor, inner_size);
     Ok(())
 }

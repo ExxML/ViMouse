@@ -165,6 +165,7 @@ fn main() {
     let lock_path = std::env::temp_dir().join("vimouse.lock");
     let lock_file = std::fs::OpenOptions::new()
         .create(true)
+        .truncate(false)
         .write(true)
         .open(&lock_path)
         .expect("failed to open lock file");
@@ -269,8 +270,6 @@ fn main() {
     let mut topmost_reassert_at: Option<Instant> = None;
 
     event_loop.run(move |event, _, control_flow| {
-        // was: WaitUntil(33ms) unconditionally — caused ~30 wakeups/sec at idle.
-        // Now: block indefinitely; wake only via UserEvent from the input hook or a pending timer.
         *control_flow = match topmost_reassert_at {
             Some(deadline) => ControlFlow::WaitUntil(deadline),
             None => ControlFlow::Wait,

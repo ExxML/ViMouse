@@ -62,7 +62,7 @@ impl GridSurface {
         }
     }
 
-    // prime() is kept for API compatibility but is now a no-op — initialization is lazy.
+    // prime() is kept for API compatibility but is now a no-op (initialization is lazy).
     pub fn prime(&mut self, _window: &Window, _monitor: &MonitorInfo) {}
 
     pub fn update(&mut self, window: &Window, state: &GridOverlayState) {
@@ -240,7 +240,7 @@ struct GridSurfaceImp {
     queue: wgpu::Queue,
     surface_format: wgpu::TextureFormat,
     alpha_mode: wgpu::CompositeAlphaMode,
-    // Pipeline only depends on surface_format, not texture size — compiled once.
+    // Pipeline only depends on surface_format, not texture size (compiled once).
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -289,8 +289,8 @@ impl GridSurfaceImp {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
 
-        // macOS Metal: [Opaque, PostMultiplied] — pick PostMultiplied.
-        // Linux Vulkan: depends on compositor — PreMultiplied or Inherit work with ARGB window.
+        // macOS Metal: [Opaque, PostMultiplied] - pick PostMultiplied.
+        // Linux Vulkan: depends on compositor - PreMultiplied or Inherit work with ARGB window.
         let alpha_mode = [
             wgpu::CompositeAlphaMode::PostMultiplied,
             wgpu::CompositeAlphaMode::PreMultiplied,
@@ -314,7 +314,7 @@ impl GridSurfaceImp {
             },
         );
 
-        // Build pipeline once — it does not depend on texture dimensions.
+        // Build pipeline once, it does not depend on texture dimensions.
         let (pipeline, bind_group_layout) = Self::build_pipeline(&device, surface_format);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -500,7 +500,7 @@ impl GridSurfaceImp {
             self.texture_uploaded = false;
         }
 
-        // Grid pixel data is static — upload only once per size.
+        // Grid pixel data is static - upload only once per size.
         if !self.texture_uploaded {
             self.queue.write_texture(
                 wgpu::ImageCopyTexture {

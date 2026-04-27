@@ -229,7 +229,6 @@ fn handle_key_press(
     drop(state);
     waker.notify_one();
 
-    // was: event loop polled every 33ms — now woken only on actual UI change
     if ui_changed {
         let _ = ui_waker.send_event(());
     }
@@ -443,7 +442,7 @@ fn sync_runtime_modifier_suppression(_state: &SharedState, tracker: &mut HookTra
 // Keep runtime modifiers active for ViMouse itself while making them temporarily invisible to
 // the OS whenever captured movement is in progress.
 fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
-    // There are at most 3 runtime modifiers — use a stack array to avoid heap allocation.
+    // There are at most 3 runtime modifiers - use a stack array to avoid heap allocation.
     const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
 
     let moving = movement_active(&state.pressed_keys);
@@ -499,16 +498,36 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
     let elapsed_y = elapsed_j.max(elapsed_k);
 
     if scroll_mode_active(&state.pressed_keys) {
-        let speed_x = acceleration_speed(elapsed_x, SCROLL_BASE_SPEED, SCROLL_ACCELERATION, SCROLL_MAX_SPEED) * speed_multiplier;
-        let speed_y = acceleration_speed(elapsed_y, SCROLL_BASE_SPEED, SCROLL_ACCELERATION, SCROLL_MAX_SPEED) * speed_multiplier;
+        let speed_x = acceleration_speed(
+            elapsed_x,
+            SCROLL_BASE_SPEED,
+            SCROLL_ACCELERATION,
+            SCROLL_MAX_SPEED,
+        ) * speed_multiplier;
+        let speed_y = acceleration_speed(
+            elapsed_y,
+            SCROLL_BASE_SPEED,
+            SCROLL_ACCELERATION,
+            SCROLL_MAX_SPEED,
+        ) * speed_multiplier;
         let delta_x = -direction.x * speed_x * delta_seconds;
         let delta_y = -direction.y * speed_y * delta_seconds;
         actions.push(Action::Scroll { delta_x, delta_y });
         return;
     }
 
-    let speed_x = acceleration_speed(elapsed_x, CURSOR_BASE_SPEED, CURSOR_ACCELERATION, CURSOR_MAX_SPEED) * speed_multiplier;
-    let speed_y = acceleration_speed(elapsed_y, CURSOR_BASE_SPEED, CURSOR_ACCELERATION, CURSOR_MAX_SPEED) * speed_multiplier;
+    let speed_x = acceleration_speed(
+        elapsed_x,
+        CURSOR_BASE_SPEED,
+        CURSOR_ACCELERATION,
+        CURSOR_MAX_SPEED,
+    ) * speed_multiplier;
+    let speed_y = acceleration_speed(
+        elapsed_y,
+        CURSOR_BASE_SPEED,
+        CURSOR_ACCELERATION,
+        CURSOR_MAX_SPEED,
+    ) * speed_multiplier;
 
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
