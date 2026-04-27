@@ -78,6 +78,7 @@ The screen is divided into a 5×3 grid - press the labeled key to warp the curso
 │   Z   │   X   │   C   │   V   │   B   │
 └───────┴───────┴───────┴───────┴───────┘
 ```
+- Each cell is also divided into a 5×3 grid. Press a second jump grid key within 1 second to jump to a subcell within the current cell.
 - Press `Right Shift` to toggle a reference grid overlay to serve as a guide for where to jump.
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
