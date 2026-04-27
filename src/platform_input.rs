@@ -603,8 +603,8 @@ impl PlatformEmitter {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
             Action::Scroll { delta_x, delta_y } => {
-                // 32.0 accurately scales ViMouse scroll units to macOS pixel units.
-                const PIXELS_PER_UNIT: f64 = 32.0;
+                // 48.0 accurately scales ViMouse scroll units to macOS pixel units.
+                const PIXELS_PER_UNIT: f64 = 48.0;
                 let px_y = (delta_y * PIXELS_PER_UNIT).round() as i32;
                 let px_x = (delta_x * PIXELS_PER_UNIT).round() as i32;
                 let event = CGEvent::new_scroll_event(
