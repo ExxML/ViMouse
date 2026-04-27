@@ -52,7 +52,7 @@ All these values are modifiable in `src/config.rs`. For example, if you want to 
 
 Hold `Left Shift` + `H` / `J` / `K` / `L` to scroll.
 
-Like cursor movement, scrolling also features acceleration and `Space` / `Alt` speed modifiers.
+Like cursor movement, scrolling also features `Space` / `Alt` speed modifiers, but does not use acceleration by default (configurable in `src/config.rs`).
 
 ---
 
