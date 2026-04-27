@@ -1,9 +1,9 @@
 use crate::config::{
     ACCEL_DELAY_SECS, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER,
-    JUMP_GRID, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_LEFT_CLICK,
-    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_RIGHT_CLICK,
-    KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
-    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ, JUMP_GRID_DELAY,
+    JUMP_GRID, JUMP_GRID_DELAY, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
+    KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
+    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -348,7 +348,6 @@ fn cycle_monitor(state: &mut SharedState) {
         state.pending_actions.push(Action::MouseMove(state.cursor));
     }
 }
-
 
 fn queue_jump(state: &mut SharedState, key: Key) {
     let Some(monitor) = state.monitors.get(state.selected_monitor).copied() else {

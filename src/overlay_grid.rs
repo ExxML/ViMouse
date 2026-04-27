@@ -229,10 +229,6 @@ fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
 }
 
 // ── macOS / Linux implementation (raw wgpu with correct transparent alpha mode) ─
-
-#[cfg(not(target_os = "windows"))]
-use wgpu;
-
 #[cfg(not(target_os = "windows"))]
 struct GridSurfaceImp {
     surface: wgpu::Surface,
