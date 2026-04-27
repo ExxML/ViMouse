@@ -213,7 +213,12 @@ fn handle_key_press(
 
     match state.mode {
         Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
-        Mode::Normal => apply_normal_mode_press(&mut state, key),
+        Mode::Normal => {
+            if !is_jump_key(key) {
+                state.pending_subcell = None;
+            }
+            apply_normal_mode_press(&mut state, key);
+        }
     }
     sync_runtime_modifier_suppression(&state, &mut tracker);
 
@@ -345,17 +350,31 @@ fn cycle_monitor(state: &mut SharedState) {
     }
 }
 
+const SUBCELL_TIMEOUT: Duration = Duration::from_secs(1);
+
 fn queue_jump(state: &mut SharedState, key: Key) {
     let Some(monitor) = state.monitors.get(state.selected_monitor).copied() else {
         return;
     };
 
-    let Some(target) = jump_target(monitor, key) else {
+    if let Some((cell_col, cell_row, pressed_at)) = state.pending_subcell.take() {
+        if pressed_at.elapsed() <= SUBCELL_TIMEOUT {
+            if let Some(target) = subcell_target(monitor, cell_col, cell_row, key) {
+                update_cursor(state, target);
+                state.pending_actions.push(Action::MouseMove(state.cursor));
+                return;
+            }
+        }
+        // Timed out or key lookup failed - fall through to normal first-level jump.
+    }
+
+    let Some((target, col, row)) = jump_target_with_index(monitor, key) else {
         return;
     };
 
     update_cursor(state, target);
     state.pending_actions.push(Action::MouseMove(state.cursor));
+    state.pending_subcell = Some((col, row, Instant::now()));
 }
 
 fn press_mouse_button(state: &mut SharedState, button: Button) {
@@ -559,23 +578,46 @@ fn movement_multiplier(keys: &HashSet<Key>) -> f64 {
     multiplier
 }
 
-fn jump_target(monitor: crate::state::MonitorInfo, key: Key) -> Option<Point> {
+fn jump_grid_index(key: Key) -> Option<(usize, usize)> {
     for (row, keys) in JUMP_GRID.iter().enumerate() {
-        for (column, cell_key) in keys.iter().enumerate() {
-            if *cell_key != key {
-                continue;
+        for (col, cell_key) in keys.iter().enumerate() {
+            if *cell_key == key {
+                return Some((col, row));
             }
-
-            let cell_width = monitor.width / JUMP_GRID[0].len() as f64;
-            let cell_height = monitor.height / JUMP_GRID.len() as f64;
-            return Some(Point {
-                x: monitor.origin.x + (column as f64 + 0.5) * cell_width,
-                y: monitor.origin.y + (row as f64 + 0.5) * cell_height,
-            });
         }
     }
-
     None
+}
+
+fn jump_target_with_index(monitor: crate::state::MonitorInfo, key: Key) -> Option<(Point, u8, u8)> {
+    let (col, row) = jump_grid_index(key)?;
+    let cell_w = monitor.width / JUMP_GRID[0].len() as f64;
+    let cell_h = monitor.height / JUMP_GRID.len() as f64;
+    Some((
+        Point {
+            x: monitor.origin.x + (col as f64 + 0.5) * cell_w,
+            y: monitor.origin.y + (row as f64 + 0.5) * cell_h,
+        },
+        col as u8,
+        row as u8,
+    ))
+}
+
+fn subcell_target(
+    monitor: crate::state::MonitorInfo,
+    cell_col: u8,
+    cell_row: u8,
+    key: Key,
+) -> Option<Point> {
+    let (sc, sr) = jump_grid_index(key)?;
+    let cell_w = monitor.width / JUMP_GRID[0].len() as f64;
+    let cell_h = monitor.height / JUMP_GRID.len() as f64;
+    let sub_w = cell_w / JUMP_GRID[0].len() as f64;
+    let sub_h = cell_h / JUMP_GRID.len() as f64;
+    Some(Point {
+        x: monitor.origin.x + cell_col as f64 * cell_w + sc as f64 * sub_w + sub_w * 0.5,
+        y: monitor.origin.y + cell_row as f64 * cell_h + sr as f64 * sub_h + sub_h * 0.5,
+    })
 }
 
 fn emit_pending_key_events(tracker: &std::sync::Mutex<HookTracker>) {
