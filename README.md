@@ -83,6 +83,9 @@ The screen is divided into a 5×3 grid - press the labeled key to warp the curso
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
 
+> [!TIP]
+> It is recommended to use the jump grid as your primary method of navigation and only use the cursor movement keys (HJKL) for micro-adjustments.
+
 ---
 
 ### Other Controls
