@@ -18,12 +18,12 @@ pub const TICK_RATE_HZ: u64 = 240;
 pub const ACCEL_DELAY_SECS: f64 = 0.15; // seconds before cursor/scroll acceleration starts
 
 pub const CURSOR_BASE_SPEED: f64 = 100.0; // px/sec during initial hold (before acceleration starts)
-pub const CURSOR_ACCELERATION: f64 = 2600.0; // additional px/sec² after ACCEL_DELAY_SECS
-pub const CURSOR_MAX_SPEED: f64 = 2400.0; // px/sec ceiling when accelerating
+pub const CURSOR_ACCELERATION: f64 = f64::INFINITY; // additional px/sec² after ACCEL_DELAY_SECS
+pub const CURSOR_MAX_SPEED: f64 = 1000.0; // px/sec ceiling when accelerating
 
-pub const SCROLL_BASE_SPEED: f64 = 15.0; // scroll units/sec during initial hold (before acceleration starts)
-pub const SCROLL_ACCELERATION: f64 = 200.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
-pub const SCROLL_MAX_SPEED: f64 = 120.0; // scroll units/sec ceiling when accelerating
+pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold (before acceleration starts)
+pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
+pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling when accelerating
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
@@ -44,7 +44,7 @@ pub const KEY_SCROLL: Key = Key::ShiftLeft; // Recommend using a modifier or non
 pub const KEY_FAST: Key = Key::Space;
 pub const KEY_SLOW: Key = Key::Alt;
 // Speed multipliers
-pub const FAST_MULTIPLIER: f64 = 2.0;
+pub const FAST_MULTIPLIER: f64 = 3.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
 
 // Monitor cycling
