@@ -178,8 +178,13 @@ fn handle_key_press(
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
-            // Suppress runtime modifiers while moving
-            if is_runtime_modifier(key) && movement_active(&state.pressed_keys) {
+            // KEY_SCROLL always captured.
+            if key == KEY_SCROLL {
+                true
+            // KEY_FAST/KEY_SLOW only captured when scroll/move is pressed.
+            } else if (key == KEY_FAST || key == KEY_SLOW)
+                && (tracker.held_keys.contains(&KEY_SCROLL) || movement_active(&state.pressed_keys))
+            {
                 true
             }
             // If a non-ViMouse key started the chord, let the rest of that chord pass through.
