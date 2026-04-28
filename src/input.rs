@@ -57,7 +57,7 @@ pub fn spawn_input_hook(shared: Shared, waker: MotionWaker, ui_waker: UiWaker) {
         .expect("failed to spawn input hook thread");
 }
 
-pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
+pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker, ui_waker: UiWaker) {
     thread::Builder::new()
         .name("vimouse-motion-loop".to_string())
         .stack_size(256 * 1024)
@@ -67,6 +67,10 @@ pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
             let mut last_tick = Instant::now();
             let mut next_tick = last_tick + frame_time;
             let mut action_buf: Vec<Action> = Vec::with_capacity(8);
+            let mut last_monitor = shared
+                .lock()
+                .expect("shared state poisoned")
+                .selected_monitor;
 
             loop {
                 // Park until the input hook signals that motion is needed.
@@ -89,6 +93,14 @@ pub fn spawn_motion_loop(shared: Shared, waker: MotionWaker) {
                 collect_pending_actions(&shared, delta_seconds, &mut action_buf);
                 emitter.emit_all(&action_buf);
                 action_buf.clear();
+                let current_monitor = shared
+                    .lock()
+                    .expect("shared state poisoned")
+                    .selected_monitor;
+                if current_monitor != last_monitor {
+                    last_monitor = current_monitor;
+                    let _ = ui_waker.send_event(());
+                }
 
                 let now = Instant::now();
                 if next_tick > now {
@@ -118,7 +130,13 @@ fn handle_hook_event(
         }
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
+            let prev_monitor = state.selected_monitor;
             update_cursor(&mut state, Point { x, y });
+            let monitor_changed = state.selected_monitor != prev_monitor;
+            drop(state);
+            if monitor_changed {
+                let _ = ui_waker.send_event(());
+            }
             Some(event)
         }
         _ => Some(event),
@@ -178,12 +196,11 @@ fn handle_key_press(
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
-            // KEY_SCROLL always captured.
-            if key == KEY_SCROLL {
-                true
-            // KEY_FAST/KEY_SLOW only captured when scroll/move is pressed.
-            } else if (key == KEY_FAST || key == KEY_SLOW)
-                && (tracker.held_keys.contains(&KEY_SCROLL) || movement_active(&state.pressed_keys))
+            // KEY_SCROLL always captured; KEY_FAST/KEY_SLOW only when scroll/move active.
+            if key == KEY_SCROLL
+                || ((key == KEY_FAST || key == KEY_SLOW)
+                    && (tracker.held_keys.contains(&KEY_SCROLL)
+                        || movement_active(&state.pressed_keys)))
             {
                 true
             }

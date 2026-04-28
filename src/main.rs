@@ -221,8 +221,12 @@ fn main() {
     // Proxy lets the input hook thread wake the winit event loop without polling.
     let ui_waker = event_loop.create_proxy();
 
-    spawn_input_hook(Arc::clone(&shared), Arc::clone(&motion_waker), ui_waker);
-    spawn_motion_loop(Arc::clone(&shared), motion_waker);
+    spawn_input_hook(
+        Arc::clone(&shared),
+        Arc::clone(&motion_waker),
+        ui_waker.clone(),
+    );
+    spawn_motion_loop(Arc::clone(&shared), motion_waker, ui_waker);
 
     let (mut last_overlay_icon, mut last_grid_state, monitors) = {
         let state = shared.lock().expect("shared state poisoned");
