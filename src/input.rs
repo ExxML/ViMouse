@@ -366,7 +366,6 @@ fn cycle_monitor(state: &mut SharedState) {
 
     if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
         state.cursor = monitor.center();
-        release_all_buttons(state);
         state.pending_actions.push(Action::MouseMove(state.cursor));
     }
 }
