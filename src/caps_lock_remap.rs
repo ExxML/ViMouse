@@ -91,7 +91,10 @@ impl CapsLockRemapper {
 
         if enabled {
             if self.original_mapping.is_none() {
-                self.original_mapping = copy_user_key_mapping(client);
+                // Strip any stale Caps Lock remap left by a previous crashed session before
+                // saving as the restore target, otherwise shutdown would re-apply the bad remap.
+                self.original_mapping =
+                    Some(strip_caps_lock_remap(copy_user_key_mapping(client).as_ref()));
             }
 
             let remap = build_caps_lock_remap(self.original_mapping.as_ref());
@@ -153,20 +156,28 @@ fn set_user_key_mapping(client: IOHIDEventSystemClientRef, property: &CFType) ->
     }
 }
 
-fn build_caps_lock_remap(original_mapping: Option<&CFType>) -> CFArray<CFType> {
-    let mut mappings = Vec::new();
-
-    if let Some(original_mapping) = original_mapping {
-        if let Some(array) = original_mapping.downcast::<CFArray>() {
+fn strip_caps_lock_remap(mapping: Option<&CFType>) -> CFType {
+    let mut entries = Vec::new();
+    if let Some(mapping) = mapping {
+        if let Some(array) = mapping.downcast::<CFArray>() {
             for item in &array {
-                let mapping = unsafe { CFType::wrap_under_get_rule(*item as CFTypeRef) };
-                if mapping_source_usage(&mapping) != Some(HID_USAGE_CAPS_LOCK) {
-                    mappings.push(mapping);
+                let entry = unsafe { CFType::wrap_under_get_rule(*item as CFTypeRef) };
+                if mapping_source_usage(&entry) != Some(HID_USAGE_CAPS_LOCK) {
+                    entries.push(entry);
                 }
             }
         }
     }
+    CFArray::from_CFTypes(&entries).into_CFType()
+}
 
+fn build_caps_lock_remap(original_mapping: Option<&CFType>) -> CFArray<CFType> {
+    let stripped = strip_caps_lock_remap(original_mapping);
+    let base = stripped.downcast::<CFArray>().unwrap();
+    let mut mappings: Vec<CFType> = base
+        .iter()
+        .map(|item| unsafe { CFType::wrap_under_get_rule(*item as CFTypeRef) })
+        .collect();
     mappings.push(caps_lock_remap_entry());
     CFArray::from_CFTypes(&mappings)
 }

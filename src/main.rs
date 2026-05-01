@@ -190,6 +190,15 @@ fn main() {
     })
     .expect("failed to set Ctrl+C handler");
 
+    #[cfg(target_os = "macos")]
+    {
+        let default_panic = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            crate::caps_lock_remap::shutdown();
+            default_panic(info);
+        }));
+    }
+
     let event_loop = create_event_loop();
     let bootstrap_window = create_window(&event_loop);
     let bootstrap_grid_window = create_grid_window(&event_loop);
