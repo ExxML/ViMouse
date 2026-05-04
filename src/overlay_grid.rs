@@ -13,9 +13,10 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow, GWL_EXSTYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, ULW_ALPHA,
-    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    CreateWindowExW, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
+    GWL_EXSTYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    ULW_ALPHA, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
@@ -604,6 +605,48 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
 
 // ── Window creation ───────────────────────────────────────────────────────────
 
+// Owned windows are never shown in the taskbar by Windows, unlike ITaskbarList which requires the shell.
+#[cfg(target_os = "windows")]
+pub fn create_grid_owner_hwnd() -> HWND {
+    unsafe {
+        CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            windows_sys::w!("Static"),
+            windows_sys::w!(""),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn create_grid_window(event_loop: &EventLoop<()>, owner: HWND) -> Window {
+    let builder = WindowBuilder::new()
+        .with_title("ViMouse Grid")
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_visible(false)
+        .with_active(false)
+        .with_transparent(true)
+        .with_window_level(WindowLevel::AlwaysOnTop)
+        .with_inner_size(PhysicalSize::new(1u32, 1u32));
+
+    let builder = configure_grid_window_builder(builder, owner);
+    let window = builder
+        .build(event_loop)
+        .expect("failed to create grid window");
+    configure_grid_overlay_window(&window);
+    window
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn create_grid_window(event_loop: &EventLoop<()>) -> Window {
     let builder = WindowBuilder::new()
         .with_title("ViMouse Grid")
@@ -624,8 +667,8 @@ pub fn create_grid_window(event_loop: &EventLoop<()>) -> Window {
 }
 
 #[cfg(target_os = "windows")]
-fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
-    builder.with_skip_taskbar(true)
+fn configure_grid_window_builder(builder: WindowBuilder, owner: HWND) -> WindowBuilder {
+    builder.with_skip_taskbar(true).with_owner_window(owner as isize)
 }
 
 #[cfg(target_os = "linux")]

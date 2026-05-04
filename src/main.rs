@@ -15,6 +15,8 @@ mod state;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 use crate::overlay_grid::GridOverlayState;
+#[cfg(target_os = "windows")]
+use crate::overlay_grid::create_grid_owner_hwnd;
 use crate::overlay_grid::{create_grid_window, GridSurface};
 use crate::overlay_icon::{
     create_event_loop, create_window, paint_overlay_icon, reassert_topmost,
@@ -101,10 +103,14 @@ fn create_grid_slots(
     event_loop: &EventLoop<()>,
     first_window: Window,
     monitors: &[MonitorInfo],
+    #[cfg(target_os = "windows")] owner: windows_sys::Win32::Foundation::HWND,
 ) -> Vec<GridSlot> {
     let mut windows = Vec::with_capacity(monitors.len());
     windows.push(first_window);
     for _ in 1..monitors.len() {
+        #[cfg(target_os = "windows")]
+        windows.push(create_grid_window(event_loop, owner));
+        #[cfg(not(target_os = "windows"))]
         windows.push(create_grid_window(event_loop));
     }
 
@@ -201,6 +207,11 @@ fn main() {
 
     let event_loop = create_event_loop();
     let bootstrap_window = create_window(&event_loop);
+    #[cfg(target_os = "windows")]
+    let grid_owner = create_grid_owner_hwnd();
+    #[cfg(target_os = "windows")]
+    let bootstrap_grid_window = create_grid_window(&event_loop, grid_owner);
+    #[cfg(not(target_os = "windows"))]
     let bootstrap_grid_window = create_grid_window(&event_loop);
 
     let monitors = collect_monitors(&bootstrap_window);
@@ -271,6 +282,9 @@ fn main() {
         }
     };
 
+    #[cfg(target_os = "windows")]
+    let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors, grid_owner);
+    #[cfg(not(target_os = "windows"))]
     let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors);
 
     let mut last_selected_monitor = {
