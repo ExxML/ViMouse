@@ -12,6 +12,7 @@ mod overlay_icon;
 mod platform_input;
 mod state;
 
+use crate::config::TICK_RATE_HZ;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 use crate::overlay_grid::GridOverlayState;
@@ -308,7 +309,8 @@ fn main() {
                 let selected_monitor = snap.selected_monitor;
 
                 let overlay_icon = snap.overlay_icon;
-                if last_overlay_icon != overlay_icon {
+                let icon_changed = last_overlay_icon != overlay_icon;
+                if icon_changed {
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
                         overlay_icon_slots[last_selected_monitor]
@@ -340,9 +342,21 @@ fn main() {
                     last_grid_state = grid_state;
                     update_grid_slot(&mut grid_slots[selected_monitor], last_grid_state.visible);
                     if was_visible && !last_grid_state.visible {
-                        // Schedule topmost reassert ~66ms after grid hides (replaces 2-tick countdown).
-                        topmost_reassert_at =
-                            Some(Instant::now() + std::time::Duration::from_millis(66));
+                        if icon_changed {
+                            // Grid hid because mode changed. Reassert topmost immediately since
+                            // the icon is being reshown this tick; a delayed reassert causes flicker.
+                            topmost_reassert_at = None;
+                            reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                        } else {
+                            // Grid hid because the user toggled it off. Reassert topmost after
+                            // a 1 tick delay to ensure the Windows taskbar has finished raising.
+                            topmost_reassert_at = Some(
+                                Instant::now()
+                                    + std::time::Duration::from_secs_f64(
+                                        1.0 / TICK_RATE_HZ as f64,
+                                    ),
+                            );
+                        }
                     }
                 }
 
