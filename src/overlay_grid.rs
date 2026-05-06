@@ -24,6 +24,8 @@ use winit::dpi::PhysicalSize;
 #[cfg(target_os = "macos")]
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::EventLoop;
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowBuilderExtMacOS;
 #[cfg(target_os = "windows")]
 use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 #[cfg(target_os = "linux")]
@@ -666,6 +668,11 @@ pub fn create_grid_window(event_loop: &EventLoop<()>) -> Window {
     window
 }
 
+#[cfg(target_os = "macos")]
+fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    builder.with_has_shadow(false)
+}
+
 #[cfg(target_os = "windows")]
 fn configure_grid_window_builder(builder: WindowBuilder, owner: HWND) -> WindowBuilder {
     builder.with_skip_taskbar(true).with_owner_window(owner as isize)
@@ -678,10 +685,6 @@ fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
         .with_x11_window_type(vec![XWindowType::Notification])
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
-    builder
-}
 
 fn configure_grid_overlay_window(window: &Window) {
     let _ = window.set_cursor_hittest(false);
