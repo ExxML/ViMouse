@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(unexpected_cfgs)] // objc 0.2 internally uses #[cfg(cargo-clippy)], which triggers unexpected_cfgs
 
 #[cfg(target_os = "macos")]
 #[macro_use]
