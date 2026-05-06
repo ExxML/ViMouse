@@ -93,8 +93,9 @@ impl CapsLockRemapper {
             if self.original_mapping.is_none() {
                 // Strip any stale Caps Lock remap left by a previous crashed session before
                 // saving as the restore target, otherwise shutdown would re-apply the bad remap.
-                self.original_mapping =
-                    Some(strip_caps_lock_remap(copy_user_key_mapping(client).as_ref()));
+                self.original_mapping = Some(strip_caps_lock_remap(
+                    copy_user_key_mapping(client).as_ref(),
+                ));
             }
 
             let remap = build_caps_lock_remap(self.original_mapping.as_ref());
