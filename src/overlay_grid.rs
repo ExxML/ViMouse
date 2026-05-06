@@ -1,4 +1,4 @@
-use crate::config::JUMP_GRID;
+use crate::config::{GRID_ALPHA, GRID_BRIGHTNESS, JUMP_GRID};
 use crate::state::MonitorInfo;
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
@@ -38,10 +38,6 @@ const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
 
 const LINE_THICKNESS: usize = 1;
-
-// Pre-multiplied ARGB for UpdateLayeredWindow on Windows (semi-transparent grey line)
-const LINE_ALPHA: u8 = 128;
-const LINE_GREY: u8 = 128;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridOverlayState {
@@ -210,9 +206,9 @@ fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
 // Pre-multiplied: R,G,B are multiplied by A/255.
 #[cfg(target_os = "windows")]
 fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
-    let pm = (LINE_GREY as u32 * LINE_ALPHA as u32) / 255;
-    // Memory bytes: B=pm, G=pm, R=pm, A=LINE_ALPHA  →  little-endian u32
-    let line_pixel: u32 = pm | (pm << 8) | (pm << 16) | ((LINE_ALPHA as u32) << 24);
+    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
+    // Memory bytes: B=pm, G=pm, R=pm, A=GRID_ALPHA  →  little-endian u32
+    let line_pixel: u32 = pm | (pm << 8) | (pm << 16) | ((GRID_ALPHA as u32) << 24);
 
     for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
@@ -585,10 +581,10 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
         for y in 0..h {
             for x in line_range(x_center, w) {
                 let i = (y * w + x) * 4;
-                frame[i] = LINE_GREY;
-                frame[i + 1] = LINE_GREY;
-                frame[i + 2] = LINE_GREY;
-                frame[i + 3] = LINE_ALPHA;
+                frame[i] = GRID_BRIGHTNESS;
+                frame[i + 1] = GRID_BRIGHTNESS;
+                frame[i + 2] = GRID_BRIGHTNESS;
+                frame[i + 3] = GRID_ALPHA;
             }
         }
     }
@@ -596,10 +592,10 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
         for y in line_range(y_center, h) {
             for x in 0..w {
                 let i = (y * w + x) * 4;
-                frame[i] = LINE_GREY;
-                frame[i + 1] = LINE_GREY;
-                frame[i + 2] = LINE_GREY;
-                frame[i + 3] = LINE_ALPHA;
+                frame[i] = GRID_BRIGHTNESS;
+                frame[i + 1] = GRID_BRIGHTNESS;
+                frame[i + 2] = GRID_BRIGHTNESS;
+                frame[i + 3] = GRID_ALPHA;
             }
         }
     }
