@@ -16,13 +16,11 @@ rdev = { version = "0.5", features = ["unstable_grab"] }
 softbuffer = { version = "0.3", default-features = false, features = ["x11", "x11-dlopen"] }
 winit = "0.28"
 
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-wgpu = "0.16"
-pollster = "0.3"
-
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = { version = "0.23", features = ["highsierra"] }
 core-foundation = "0.9"
+objc = "0.2"
+foreign-types-shared = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }

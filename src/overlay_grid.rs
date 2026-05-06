@@ -1,7 +1,5 @@
 use crate::config::{GRID_ALPHA, GRID_BRIGHTNESS, JUMP_GRID};
 use crate::state::MonitorInfo;
-#[cfg(target_os = "linux")]
-use std::ffi::c_void;
 #[cfg(target_os = "windows")]
 use std::ptr;
 #[cfg(target_os = "windows")]
@@ -14,9 +12,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
-    GWL_EXSTYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    ULW_ALPHA, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    GWL_EXSTYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, ULW_ALPHA,
+    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    WS_POPUP,
 };
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
@@ -25,7 +23,7 @@ use winit::dpi::PhysicalSize;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::EventLoop;
 #[cfg(target_os = "macos")]
-use winit::platform::macos::WindowBuilderExtMacOS;
+use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 #[cfg(target_os = "windows")]
 use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 #[cfg(target_os = "linux")]
@@ -33,6 +31,8 @@ use winit::platform::x11::{WindowBuilderExtX11, WindowExtX11, XWindowType};
 use winit::window::{Window, WindowBuilder, WindowLevel};
 #[cfg(target_os = "linux")]
 use x11_dl::xlib;
+#[cfg(target_os = "linux")]
+use x11_dl::xrender;
 
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
@@ -227,364 +227,210 @@ fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
     }
 }
 
-// ── macOS / Linux implementation (raw wgpu with correct transparent alpha mode) ─
-#[cfg(not(target_os = "windows"))]
+// ── macOS implementation (Core Graphics + CALayer, CPU pixel buffer) ─────────
+
+#[cfg(target_os = "macos")]
 struct GridSurfaceImp {
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface_format: wgpu::TextureFormat,
-    alpha_mode: wgpu::CompositeAlphaMode,
-    // Pipeline only depends on surface_format, not texture size (compiled once).
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
-    // Texture, bind group, and pixel cache are rebuilt only when size changes.
-    texture: wgpu::Texture,
-    bind_group: wgpu::BindGroup,
     pixel_cache: Vec<u8>,
     texture_size: (u32, u32),
-    // True after the first upload for the current size; cleared on resize.
-    texture_uploaded: bool,
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl GridSurfaceImp {
-    fn new(window: &Window, w: u32, h: u32) -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-
-        let surface =
-            unsafe { instance.create_surface(window) }.expect("grid wgpu surface creation failed");
-
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-            power_preference: wgpu::PowerPreference::default(),
-        }))
-        .expect("grid wgpu adapter not found");
-
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                limits: adapter.limits(),
-                ..Default::default()
-            },
-            None,
-        ))
-        .expect("grid wgpu device request failed");
-
-        let caps = surface.get_capabilities(&adapter);
-
-        let surface_format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
-
-        // macOS Metal: [Opaque, PostMultiplied] - pick PostMultiplied.
-        // Linux Vulkan: depends on compositor - PreMultiplied or Inherit work with ARGB window.
-        let alpha_mode = [
-            wgpu::CompositeAlphaMode::PostMultiplied,
-            wgpu::CompositeAlphaMode::PreMultiplied,
-            wgpu::CompositeAlphaMode::Inherit,
-        ]
-        .iter()
-        .copied()
-        .find(|m| caps.alpha_modes.contains(m))
-        .unwrap_or(caps.alpha_modes[0]);
-
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface_format,
-                width: w,
-                height: h,
-                present_mode: wgpu::PresentMode::AutoVsync,
-                alpha_mode,
-                view_formats: vec![],
-            },
-        );
-
-        // Build pipeline once, it does not depend on texture dimensions.
-        let (pipeline, bind_group_layout) = Self::build_pipeline(&device, surface_format);
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        // Pre-compute the grid pixel data and GPU texture for the initial size.
+    fn new(_window: &Window, w: u32, h: u32) -> Self {
         let mut pixel_cache = vec![0u8; (w * h * 4) as usize];
-        draw_grid_rgba(&mut pixel_cache, w as usize, h as usize);
-
-        let texture = Self::create_texture(&device, w, h);
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &pixel_cache,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(w * 4),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        let bind_group = Self::create_bind_group(&device, &bind_group_layout, &texture, &sampler);
-
+        fill_grid_premult_bgra(&mut pixel_cache, w as usize, h as usize);
         Self {
-            surface,
-            device,
-            queue,
-            surface_format,
-            alpha_mode,
-            pipeline,
-            bind_group_layout,
-            sampler,
-            texture,
-            bind_group,
             pixel_cache,
             texture_size: (w, h),
-            texture_uploaded: true,
         }
     }
 
-    fn build_pipeline(
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-    ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(GRID_SHADER)),
-        });
+    fn paint(&mut self, window: &Window, w: u32, h: u32) {
+        use core_graphics::base::{kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst};
+        use core_graphics::color_space::CGColorSpace;
+        use core_graphics::context::CGContext;
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        (pipeline, bind_group_layout)
-    }
-
-    fn create_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
-        device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        })
-    }
-
-    fn create_bind_group(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        texture: &wgpu::Texture,
-        sampler: &wgpu::Sampler,
-    ) -> wgpu::BindGroup {
-        let tex_view = texture.create_view(&Default::default());
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&tex_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-            ],
-        })
-    }
-
-    fn paint(&mut self, _window: &Window, w: u32, h: u32) {
-        // Rebuild texture, pixel cache, and bind group only when monitor size changes.
         if self.texture_size != (w, h) {
-            self.surface.configure(
-                &self.device,
-                &wgpu::SurfaceConfiguration {
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    format: self.surface_format,
-                    width: w,
-                    height: h,
-                    present_mode: wgpu::PresentMode::AutoVsync,
-                    alpha_mode: self.alpha_mode,
-                    view_formats: vec![],
-                },
-            );
             self.pixel_cache = vec![0u8; (w * h * 4) as usize];
-            draw_grid_rgba(&mut self.pixel_cache, w as usize, h as usize);
-            self.texture = Self::create_texture(&self.device, w, h);
-            self.bind_group = Self::create_bind_group(
-                &self.device,
-                &self.bind_group_layout,
-                &self.texture,
-                &self.sampler,
-            );
+            fill_grid_premult_bgra(&mut self.pixel_cache, w as usize, h as usize);
             self.texture_size = (w, h);
-            self.texture_uploaded = false;
         }
 
-        // Grid pixel data is static - upload only once per size.
-        if !self.texture_uploaded {
-            self.queue.write_texture(
-                wgpu::ImageCopyTexture {
-                    texture: &self.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &self.pixel_cache,
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(w * 4),
-                    rows_per_image: Some(h),
-                },
-                wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-            );
-            self.texture_uploaded = true;
-        }
+        let color_space = CGColorSpace::create_device_rgb();
+        // CGBitmapContext requires a mutable data pointer; we own pixel_cache so this is safe.
+        let ctx = CGContext::create_bitmap_context(
+            Some(self.pixel_cache.as_mut_ptr() as *mut std::ffi::c_void),
+            w as usize,
+            h as usize,
+            8,
+            (w * 4) as usize,
+            &color_space,
+            kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst,
+        );
+        let image = ctx
+            .create_image()
+            .expect("CGBitmapContextCreateImage failed");
 
-        let frame = match self.surface.get_current_texture() {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("grid surface error: {e}");
+        // Set the CGImage as the contents of the window's root CALayer.
+        unsafe {
+            use foreign_types_shared::ForeignType;
+            use objc::runtime::Object;
+            let ns_view = window.ns_view() as *mut Object;
+            let layer: *mut Object = msg_send![ns_view, layer];
+            if layer.is_null() {
                 return;
             }
-        };
-        let view = frame.texture.create_view(&Default::default());
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.draw(0..3, 0..1);
+            let cg_image = image.as_ptr();
+            let () = msg_send![layer, setContents: cg_image];
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
-        frame.present();
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-const GRID_SHADER: &str = r#"
-@group(0) @binding(0) var t: texture_2d<f32>;
-@group(0) @binding(1) var s: sampler;
+// ── Linux implementation (XRender ARGB32 pixmap, CPU pixel buffer) ───────────
 
-struct VertOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-
-@vertex
-fn vs_main(@builtin(vertex_index) vi: u32) -> VertOut {
-    // Fullscreen triangle covering clip space [-1,1]x[-1,1].
-    var pos = array<vec2<f32>,3>(vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));
-    var uv  = array<vec2<f32>,3>(vec2(0.0,1.0),   vec2(2.0,1.0),  vec2(0.0,-1.0));
-    var o: VertOut;
-    o.pos = vec4(pos[vi], 0.0, 1.0);
-    o.uv  = uv[vi];
-    return o;
+#[cfg(target_os = "linux")]
+struct GridSurfaceImp {
+    pixel_cache: Vec<u32>,
+    texture_size: (u32, u32),
 }
 
-@fragment
-fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
-    return textureSample(t, s, in.uv);
-}
-"#;
+#[cfg(target_os = "linux")]
+impl GridSurfaceImp {
+    fn new(_window: &Window, w: u32, h: u32) -> Self {
+        let mut pixel_cache = vec![0u32; (w * h) as usize];
+        fill_grid_argb_premult(&mut pixel_cache, w as usize, h as usize);
+        Self {
+            pixel_cache,
+            texture_size: (w, h),
+        }
+    }
 
-#[cfg(not(target_os = "windows"))]
-fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
-    frame.fill(0);
+    fn paint(&mut self, window: &Window, w: u32, h: u32) {
+        use std::mem::zeroed;
+
+        if self.texture_size != (w, h) {
+            self.pixel_cache = vec![0u32; (w * h) as usize];
+            fill_grid_argb_premult(&mut self.pixel_cache, w as usize, h as usize);
+            self.texture_size = (w, h);
+        }
+
+        let Some(display_ptr) = window.xlib_display() else {
+            return;
+        };
+        let Some(xwindow) = window.xlib_window() else {
+            return;
+        };
+        let Ok(xlib_api) = xlib::Xlib::open() else {
+            return;
+        };
+        let Ok(xrender_api) = xrender::Xrender::open() else {
+            return;
+        };
+
+        unsafe {
+            let display = display_ptr as *mut xlib::Display;
+            let screen = (xlib_api.XDefaultScreen)(display);
+
+            // Find an ARGB32 visual for the pixmap.
+            let mut vinfo: xlib::XVisualInfo = zeroed();
+            let found =
+                (xlib_api.XMatchVisualInfo)(display, screen, 32, xlib::TrueColor, &mut vinfo);
+            if found == 0 {
+                return;
+            }
+
+            // Create an ARGB32 pixmap and upload pixels via XImage.
+            let pixmap = (xlib_api.XCreatePixmap)(display, xwindow, w, h, 32);
+
+            let gc_values: xlib::XGCValues = zeroed();
+            let gc = (xlib_api.XCreateGC)(display, pixmap, 0, &gc_values as *const _ as *mut _);
+
+            // XCreateImage wraps our data pointer without taking ownership.
+            // We null out ximage->data before XDestroyImage to prevent double-free.
+            let data_ptr = self.pixel_cache.as_mut_ptr() as *mut std::ffi::c_char;
+            let ximage = (xlib_api.XCreateImage)(
+                display,
+                vinfo.visual,
+                32,
+                xlib::ZPixmap,
+                0,
+                data_ptr,
+                w,
+                h,
+                32,
+                (w * 4) as i32,
+            );
+            if ximage.is_null() {
+                (xlib_api.XFreeGC)(display, gc);
+                (xlib_api.XFreePixmap)(display, pixmap);
+                return;
+            }
+
+            (xlib_api.XPutImage)(display, pixmap, gc, ximage, 0, 0, 0, 0, w, h);
+
+            (*ximage).data = std::ptr::null_mut();
+            (xlib_api.XDestroyImage)(ximage);
+            (xlib_api.XFreeGC)(display, gc);
+
+            // XRender: composite pixmap onto the window using PictOpSrc.
+            let argb_fmt =
+                (xrender_api.XRenderFindStandardFormat)(display, xrender::PictStandardARGB32);
+            if argb_fmt.is_null() {
+                (xlib_api.XFreePixmap)(display, pixmap);
+                return;
+            }
+            let win_fmt = (xrender_api.XRenderFindVisualFormat)(display, vinfo.visual);
+            if win_fmt.is_null() {
+                (xlib_api.XFreePixmap)(display, pixmap);
+                return;
+            }
+
+            let pic_attrs: xrender::XRenderPictureAttributes = zeroed();
+            let src_pic =
+                (xrender_api.XRenderCreatePicture)(display, pixmap, argb_fmt, 0, &pic_attrs);
+            let dst_pic =
+                (xrender_api.XRenderCreatePicture)(display, xwindow, win_fmt, 0, &pic_attrs);
+
+            (xrender_api.XRenderComposite)(
+                display,
+                xrender::PictOpSrc as i32,
+                src_pic,
+                0, // no mask
+                dst_pic,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                w,
+                h,
+            );
+
+            (xrender_api.XRenderFreePicture)(display, src_pic);
+            (xrender_api.XRenderFreePicture)(display, dst_pic);
+            (xlib_api.XFreePixmap)(display, pixmap);
+            (xlib_api.XFlush)(display);
+        }
+    }
+}
+
+// Pre-multiplied BGRA for macOS CGBitmapContext (kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst).
+// In memory: B G R A per pixel; as little-endian u32 = 0xAARRGGBB.
+#[cfg(target_os = "macos")]
+fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
+    pixels.fill(0);
+    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32 / 255) as u8;
+    // Memory layout per pixel: [B, G, R, A]
     for x_center in axis_line_centers(w, GRID_COLS) {
         for y in 0..h {
             for x in line_range(x_center, w) {
                 let i = (y * w + x) * 4;
-                frame[i] = GRID_BRIGHTNESS;
-                frame[i + 1] = GRID_BRIGHTNESS;
-                frame[i + 2] = GRID_BRIGHTNESS;
-                frame[i + 3] = GRID_ALPHA;
+                pixels[i] = pm;
+                pixels[i + 1] = pm;
+                pixels[i + 2] = pm;
+                pixels[i + 3] = GRID_ALPHA;
             }
         }
     }
@@ -592,10 +438,32 @@ fn draw_grid_rgba(frame: &mut [u8], w: usize, h: usize) {
         for y in line_range(y_center, h) {
             for x in 0..w {
                 let i = (y * w + x) * 4;
-                frame[i] = GRID_BRIGHTNESS;
-                frame[i + 1] = GRID_BRIGHTNESS;
-                frame[i + 2] = GRID_BRIGHTNESS;
-                frame[i + 3] = GRID_ALPHA;
+                pixels[i] = pm;
+                pixels[i + 1] = pm;
+                pixels[i + 2] = pm;
+                pixels[i + 3] = GRID_ALPHA;
+            }
+        }
+    }
+}
+
+// Pre-multiplied ARGB for Linux XRender (native-endian u32 = 0xAARRGGBB).
+#[cfg(target_os = "linux")]
+fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize) {
+    pixels.fill(0);
+    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
+    let pixel: u32 = ((GRID_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    for x_center in axis_line_centers(w, GRID_COLS) {
+        for y in 0..h {
+            for x in line_range(x_center, w) {
+                pixels[y * w + x] = pixel;
+            }
+        }
+    }
+    for y_center in axis_line_centers(h, GRID_ROWS) {
+        for y in line_range(y_center, h) {
+            for x in 0..w {
+                pixels[y * w + x] = pixel;
             }
         }
     }
@@ -671,7 +539,9 @@ fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
 
 #[cfg(target_os = "windows")]
 fn configure_grid_window_builder(builder: WindowBuilder, owner: HWND) -> WindowBuilder {
-    builder.with_skip_taskbar(true).with_owner_window(owner as isize)
+    builder
+        .with_skip_taskbar(true)
+        .with_owner_window(owner as isize)
 }
 
 #[cfg(target_os = "linux")]
@@ -680,7 +550,6 @@ fn configure_grid_window_builder(builder: WindowBuilder) -> WindowBuilder {
         .with_override_redirect(true)
         .with_x11_window_type(vec![XWindowType::Notification])
 }
-
 
 fn configure_grid_overlay_window(window: &Window) {
     let _ = window.set_cursor_hittest(false);

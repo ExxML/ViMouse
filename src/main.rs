@@ -1,6 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
+#[cfg(target_os = "macos")]
 mod caps_lock_remap;
 #[cfg(not(target_os = "macos"))]
 mod caps_lock_suppress;
@@ -15,9 +19,9 @@ mod state;
 use crate::config::TICK_RATE_HZ;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
-use crate::overlay_grid::GridOverlayState;
 #[cfg(target_os = "windows")]
 use crate::overlay_grid::create_grid_owner_hwnd;
+use crate::overlay_grid::GridOverlayState;
 use crate::overlay_grid::{create_grid_window, GridSurface};
 use crate::overlay_icon::{
     create_event_loop, create_window, paint_overlay_icon, reassert_topmost,
@@ -284,7 +288,8 @@ fn main() {
     };
 
     #[cfg(target_os = "windows")]
-    let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors, grid_owner);
+    let mut grid_slots =
+        create_grid_slots(&event_loop, bootstrap_grid_window, &monitors, grid_owner);
     #[cfg(not(target_os = "windows"))]
     let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors);
 
@@ -352,9 +357,7 @@ fn main() {
                             // a 1 tick delay to ensure the Windows taskbar has finished raising.
                             topmost_reassert_at = Some(
                                 Instant::now()
-                                    + std::time::Duration::from_secs_f64(
-                                        1.0 / TICK_RATE_HZ as f64,
-                                    ),
+                                    + std::time::Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64),
                             );
                         }
                     }
