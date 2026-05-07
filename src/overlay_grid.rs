@@ -37,7 +37,8 @@ use x11_dl::xrender;
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
 
-const LINE_THICKNESS: usize = 2;
+#[cfg(not(target_os = "macos"))]
+const LINE_THICKNESS: usize = 1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridOverlayState {
@@ -187,16 +188,16 @@ impl GridSurfaceImp {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn axis_line_centers(length: usize, cells: usize) -> impl Iterator<Item = usize> {
-    let half = LINE_THICKNESS / 2;
-    // Inset edge lines so they don't start at physical pixel 0 (clipped by compositor).
-    std::iter::once(half + 1).chain(
+    std::iter::once(0).chain(
         (1..cells)
             .map(move |i| i * length / cells)
-            .chain(std::iter::once(length.saturating_sub(half))),
+            .chain(std::iter::once(length.saturating_sub(1))),
     )
 }
 
+#[cfg(not(target_os = "macos"))]
 fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
     let start = center.saturating_sub(LINE_THICKNESS / 2);
     let end = (start + LINE_THICKNESS).min(length);
@@ -422,12 +423,34 @@ impl GridSurfaceImp {
 // In memory: B G R A per pixel; as little-endian u32 = 0xAARRGGBB.
 #[cfg(target_os = "macos")]
 fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
+    // 2 physical pixels = 1pt on Retina; inset by 1px so edge lines aren't clipped
+    // by the compositor at the physical pixel boundary.
+    // 2 physical pixels wide so lines are 1pt on Retina and survive CALayer rendering.
+    const T: usize = 2;
+    let half = T / 2;
+    // x: flush to edges (no compositor clip on left/right)
+    let x_centers = |len: usize| {
+        std::iter::once(half)
+            .chain((1..GRID_COLS).map(move |i| i * len / GRID_COLS))
+            .chain(std::iter::once(len.saturating_sub(half)))
+    };
+    // y: inset by 1px so top/bottom lines aren't clipped at the screen boundary
+    let y_centers = |len: usize| {
+        std::iter::once(half + 1)
+            .chain((1..GRID_ROWS).map(move |i| i * len / GRID_ROWS))
+            .chain(std::iter::once(len.saturating_sub(half)))
+    };
+    let lr = |center: usize, len: usize| {
+        let start = center.saturating_sub(half);
+        let end = (start + T).min(len);
+        start..end
+    };
+
     pixels.fill(0);
     let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32 / 255) as u8;
-    // Memory layout per pixel: [B, G, R, A]
-    for x_center in axis_line_centers(w, GRID_COLS) {
+    for x_center in x_centers(w) {
         for y in 0..h {
-            for x in line_range(x_center, w) {
+            for x in lr(x_center, w) {
                 let i = (y * w + x) * 4;
                 pixels[i] = pm;
                 pixels[i + 1] = pm;
@@ -436,8 +459,8 @@ fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
             }
         }
     }
-    for y_center in axis_line_centers(h, GRID_ROWS) {
-        for y in line_range(y_center, h) {
+    for y_center in y_centers(h) {
+        for y in lr(y_center, h) {
             for x in 0..w {
                 let i = (y * w + x) * 4;
                 pixels[i] = pm;
