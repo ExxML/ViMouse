@@ -18,7 +18,7 @@ use winit::dpi::PhysicalSize;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::{EventLoop, EventLoopBuilder};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS, WindowBuilderExtMacOS};
 #[cfg(target_os = "windows")]
 use winit::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 #[cfg(target_os = "linux")]
@@ -271,6 +271,11 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
+    builder.with_has_shadow(false)
+}
+
 #[cfg(target_os = "windows")]
 fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
     builder.with_skip_taskbar(true)
@@ -281,11 +286,6 @@ fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
     builder
         .with_override_redirect(true)
         .with_x11_window_type(vec![XWindowType::Notification])
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn configure_window_builder(builder: WindowBuilder) -> WindowBuilder {
-    builder
 }
 
 fn configure_overlay_window(window: &Window) {
