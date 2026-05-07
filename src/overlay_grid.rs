@@ -37,7 +37,7 @@ use x11_dl::xrender;
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
 
-const LINE_THICKNESS: usize = 1;
+const LINE_THICKNESS: usize = 2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridOverlayState {
@@ -188,11 +188,12 @@ impl GridSurfaceImp {
 }
 
 fn axis_line_centers(length: usize, cells: usize) -> impl Iterator<Item = usize> {
-    // Draw starting/closing edges along with the interior dividers so the grid is framed.
-    std::iter::once(0).chain(
+    let half = LINE_THICKNESS / 2;
+    // Inset edge lines so they don't start at physical pixel 0 (clipped by compositor).
+    std::iter::once(half + 1).chain(
         (1..cells)
             .map(move |i| i * length / cells)
-            .chain(std::iter::once(length.saturating_sub(1))),
+            .chain(std::iter::once(length.saturating_sub(half))),
     )
 }
 
@@ -282,6 +283,7 @@ impl GridSurfaceImp {
                 return;
             }
             let cg_image = image.as_ptr();
+            let () = msg_send![layer, setContentsScale: window.scale_factor()];
             let () = msg_send![layer, setContents: cg_image];
         }
     }
