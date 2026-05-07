@@ -249,7 +249,7 @@ fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
     let glyph_width = (max_col - min_col + 1) * scale;
     let glyph_height = (max_row - min_row + 1) * scale;
     let offset_x = (overlay_size - glyph_width) / 2;
-    let offset_y = (overlay_size - glyph_height + 1) / 2;
+    let offset_y = (overlay_size - glyph_height) / 2;
 
     for (row, bits) in glyph.iter().enumerate() {
         for col in 0..8usize {
