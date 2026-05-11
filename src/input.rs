@@ -196,11 +196,10 @@ fn handle_key_press(
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
-            // KEY_SCROLL always captured; KEY_FAST/KEY_SLOW only when scroll/move active.
-            if key == KEY_SCROLL
-                || ((key == KEY_FAST || key == KEY_SLOW)
-                    && (tracker.held_keys.contains(&KEY_SCROLL)
-                        || movement_active(&state.pressed_keys)))
+            // KEY_FAST/KEY_SLOW only captured when scroll/move active.
+            if (key == KEY_FAST || key == KEY_SLOW)
+                && (tracker.held_keys.contains(&KEY_SCROLL)
+                    || movement_active(&state.pressed_keys))
             {
                 true
             }
@@ -210,7 +209,7 @@ fn handle_key_press(
             else if (key == KEY_LEFT_CLICK || key == KEY_RIGHT_CLICK)
                 && !has_uncaptured_non_modifier_non_os(&tracker, key)
             {
-                no_modifiers_held(&tracker.held_keys)
+                true
             } else if is_move_key(key)
                 && scroll_mode_active(&state.pressed_keys)
                 && !has_uncaptured_non_modifier_non_os(&tracker, key)
