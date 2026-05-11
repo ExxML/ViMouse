@@ -19,6 +19,21 @@ use std::time::{Duration, Instant};
 
 const MOVE_KEYS: [Key; 4] = [KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE_RIGHT];
 
+// Definitions
+//
+// Captured: Never sent to the OS. ViMouse acts on it (move cursor, click, switch
+// mode, etc.) and the OS never sees the event. Always captured from key-down
+// until key-up.
+//
+// Suppressed: Conditionally sent to the OS. ViMouse does not always act on the
+// key, but temporarily hides it from the OS. This applies to runtime modifiers
+// (KEY_SCROLL / KEY_FAST / KEY_SLOW) while the cursor is moving, otherwise the
+// OS would treat them as held modifier keys and do unexpected things (e.g.
+// interpret a scroll as Shift+scroll). ViMouse sends a fake key-release to hide
+// them, then a fake key-press to restore them once movement stops.
+//
+// Captured keys are owned by ViMouse for their full lifetime; suppressed keys
+// are still "held" from ViMouse's perspective but transiently hidden from the OS.
 #[derive(Default)]
 struct HookTracker {
     held_keys: HashSet<Key>,
@@ -171,6 +186,26 @@ fn handle_key_event(
     }
 }
 
+// Returns true if the key is captured (its press event is dropped from the OS stream).
+//   - See Captured vs Suppressed definition in the comment at the top of this file
+//
+// Capture key logic:
+//   Insert mode
+//     - KEY_NORMAL_MODE (no modifiers held).
+//   Normal mode
+//     - Move keys: always captured.
+//     - KEY_FAST / KEY_SLOW: captured only while movement or scroll is already active.
+//     - Mouse clicks, grid toggle, jump, KEY_INSERT_MODE, KEY_CYCLE_MONITOR:
+//       captured when no runtime modifiers (KEY_SCROLL / KEY_FAST / KEY_SLOW) are held.
+//     - EXCEPTION: if an uncaptured non-ViMouse key is already held, the whole
+//       chord passes through; ViMouse won't steal a foreign shortcut mid-chord.
+//       - HOWEVER: clicks and scroll-move keys ignore OS modifiers
+//         (Ctrl/Alt/Shift/Meta) when checking for foreign chords, so
+//         ex. Ctrl+click still works (still captured).
+//
+// Runtime modifiers (KEY_SCROLL / KEY_FAST / KEY_SLOW) are suppressed separately
+// from the OS while movement is active (see sync_runtime_modifier_suppression);
+// they are not in captured_keys.
 fn handle_key_press(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
@@ -470,8 +505,9 @@ fn sync_runtime_modifier_suppression(_state: &SharedState, tracker: &mut HookTra
 }
 
 #[cfg(not(target_os = "macos"))]
-// Keep runtime modifiers active for ViMouse itself while making them temporarily invisible to
-// the OS whenever captured movement is in progress.
+// Hide runtime modifiers from the OS during movement so they don't corrupt synthetic events
+// (e.g. Shift leaking onto scroll). Send fake key-release to hide, then fake key-press to restore when
+// movement stops, so the OS key state stays consistent with what the user is physically holding.
 fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
     // There are at most 3 runtime modifiers - use a stack array to avoid heap allocation.
     const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
