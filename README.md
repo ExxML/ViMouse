@@ -1,4 +1,4 @@
-# 🖱️ViMouse
+# ViMouse
 
 Effectively control your cursor with only a keyboard.
 
