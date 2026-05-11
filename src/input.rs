@@ -245,7 +245,10 @@ fn handle_key_press(
                 && !has_uncaptured_non_modifier_non_os(&tracker, key)
             {
                 true
-            } else if is_move_key(key)
+            }
+            // Capture move keys mid-scroll so modifier state is preserved on the scroll event
+            // (same rationale as click keys above).
+            else if is_move_key(key)
                 && scroll_mode_active(&state.pressed_keys)
                 && !has_uncaptured_non_modifier_non_os(&tracker, key)
             {
@@ -254,9 +257,14 @@ fn handle_key_press(
             // If a non-ViMouse key started the chord, let the rest of that chord pass through.
             else if has_uncaptured_non_modifier(&tracker, key) {
                 false
-            } else if is_move_key(key) {
+            }
+            // Always capture move keys (no scroll active); handled above if scroll active.
+            else if is_move_key(key) {
                 true
-            } else if key == KEY_INSERT_MODE
+            }
+            // Capture ViMouse action keys, but only when no modifiers are held to avoid 
+            // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
+            else if key == KEY_INSERT_MODE
                 || key == KEY_CYCLE_MONITOR
                 || key == KEY_LEFT_CLICK
                 || key == KEY_RIGHT_CLICK
@@ -265,7 +273,9 @@ fn handle_key_press(
                 || (key == Key::CapsLock && caps_lock_used_in_config())
             {
                 no_modifiers_held(&tracker.held_keys)
-            } else {
+            }
+            // Let all non-ViMouse keys pass through.
+            else {
                 false
             }
         }
