@@ -204,6 +204,19 @@ fn handle_key_press(
             {
                 true
             }
+            // Click keys and scroll-mode move keys capture even when OS modifiers
+            // (Ctrl/Alt/Shift/Meta) are held, so the OS modifier state is preserved on the
+            // resulting button/scroll event.
+            else if (key == KEY_LEFT_CLICK || key == KEY_RIGHT_CLICK)
+                && !has_uncaptured_non_modifier_non_os(&tracker, key)
+            {
+                no_modifiers_held(&tracker.held_keys)
+            } else if is_move_key(key)
+                && scroll_mode_active(&state.pressed_keys)
+                && !has_uncaptured_non_modifier_non_os(&tracker, key)
+            {
+                true
+            }
             // If a non-ViMouse key started the chord, let the rest of that chord pass through.
             else if has_uncaptured_non_modifier(&tracker, key) {
                 false
@@ -772,6 +785,30 @@ fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
             && *held_key != Key::CapsLock
             && !tracker.captured_keys.contains(held_key)
     })
+}
+
+fn has_uncaptured_non_modifier_non_os(tracker: &HookTracker, key: Key) -> bool {
+    tracker.held_keys.iter().any(|held_key| {
+        *held_key != key
+            && !is_runtime_modifier(*held_key)
+            && !is_os_modifier(*held_key)
+            && *held_key != Key::CapsLock
+            && !tracker.captured_keys.contains(held_key)
+    })
+}
+
+fn is_os_modifier(key: Key) -> bool {
+    matches!(
+        key,
+        Key::ControlLeft
+            | Key::ControlRight
+            | Key::Alt
+            | Key::AltGr
+            | Key::ShiftLeft
+            | Key::ShiftRight
+            | Key::MetaLeft
+            | Key::MetaRight
+    )
 }
 
 fn scroll_mode_active(keys: &HashSet<Key>) -> bool {
