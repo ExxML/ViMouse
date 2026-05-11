@@ -39,9 +39,14 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 | `Space` (hold) | 2× speed |
 | `Alt` (hold) | 0.3× speed |
 
-Movement accelerates the longer you hold: starts at 100 px/s and ramps up to 2400 px/s. 
+Tap a move key to move the cursor 100 px/sec. Hold to move 500 px/sec.
 
-All these values are modifiable in `src/config.rs`. For example, if you want to disable acceleration, set `ACCELERATION` to 0. If you want to enable automatic two-speed movement, set `ACCELERATION` to `f64::INFINITY` and tweak `MAX_SPEED` to your preference.
+All these values are modifiable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
+
+For example:
+- If you want to disable mouse acceleration, set `ACCELERATION` to 0.
+- If you want to use two-speed movement (current default), set `ACCELERATION` to `f64::INFINITY` and tweak `MAX_SPEED` to your preference.
+- If you want normal mouse acceleration, set `ACCELERATION` to a reasonable px/sec² value.
 
 > [!TIP]
 > Hold two movement keys simultaneously to move diagonally.
@@ -52,7 +57,9 @@ All these values are modifiable in `src/config.rs`. For example, if you want to 
 
 Hold `Left Shift` + `H` / `J` / `K` / `L` to scroll.
 
-Like cursor movement, scrolling also features `Space` / `Alt` speed modifiers, but does not use acceleration by default (configurable in `src/config.rs`).
+Scrolling features the same `Space` / `Alt` speed modifiers as [Cursor Movement](#cursor-movement).
+
+There is no scroll acceleration by default, but this can be modified in `src/config.rs`.
 
 ---
 
@@ -134,5 +141,5 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 <br>
 
 <div align="center">
-    <h6>f*ck mice</h6>
+    <small>f*ck mice</small>
 </div>
