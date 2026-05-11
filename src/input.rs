@@ -233,8 +233,7 @@ fn handle_key_press(
         Mode::Normal => {
             // KEY_FAST/KEY_SLOW only captured when scroll/move active.
             if (key == KEY_FAST || key == KEY_SLOW)
-                && (tracker.held_keys.contains(&KEY_SCROLL)
-                    || movement_active(&state.pressed_keys))
+                && (tracker.held_keys.contains(&KEY_SCROLL) || movement_active(&state.pressed_keys))
             {
                 true
             }
@@ -262,7 +261,7 @@ fn handle_key_press(
             else if is_move_key(key) {
                 true
             }
-            // Capture ViMouse action keys, but only when no modifiers are held to avoid 
+            // Capture ViMouse action keys, but only when no modifiers are held to avoid
             // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
             else if key == KEY_INSERT_MODE
                 || key == KEY_CYCLE_MONITOR

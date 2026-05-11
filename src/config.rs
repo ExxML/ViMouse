@@ -25,8 +25,7 @@ pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold
 pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
 pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling when accelerating
 
-
-/// Some keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
+// Some keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
