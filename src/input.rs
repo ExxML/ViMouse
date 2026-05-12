@@ -231,6 +231,7 @@ fn handle_key_press(
     let should_capture = match state.mode {
         Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
         Mode::Normal => {
+            #[allow(clippy::if_same_then_else)]
             // KEY_FAST/KEY_SLOW only captured when scroll/move active.
             if (key == KEY_FAST || key == KEY_SLOW)
                 && (tracker.held_keys.contains(&KEY_SCROLL) || movement_active(&state.pressed_keys))
