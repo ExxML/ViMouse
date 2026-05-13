@@ -69,7 +69,7 @@ pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
 pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::ControlRight;
 
 // Grid overlay line appearance
-pub const GRID_ALPHA: u8 = 128; // Opacity of grid lines (0–255)
+pub const GRID_ALPHA: u8 = 160; // Opacity of grid lines (0–255)
 pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greyscale intensity 0-255)
 
 // Grid overlay letter appearance
