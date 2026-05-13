@@ -75,7 +75,7 @@ pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greysca
 
 // Grid overlay letter appearance
 pub const GRID_LETTER_SIZE: usize = 2; // Scale multiplier for grid cell letters (1 = 8px, 2 = 16px, 3 = 24px, …)
-pub const GRID_LETTER_ALPHA: u8 = 192; // Opacity of grid cell letters (0–255)
+pub const GRID_LETTER_ALPHA: u8 = 224; // Opacity of grid cell letters (0–255)
 pub const GRID_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of grid cell letters (greyscale intensity 0-255)
 
 // Quit chord
