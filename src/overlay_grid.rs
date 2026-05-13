@@ -207,6 +207,16 @@ fn axis_line_centers(length: usize, cells: usize) -> impl Iterator<Item = usize>
     )
 }
 
+// On macOS the CALayer compositor does not render physical pixel row 0; inset top/bottom by 1px.
+#[cfg(target_os = "macos")]
+fn axis_line_centers_y(length: usize, cells: usize) -> impl Iterator<Item = usize> {
+    std::iter::once(1).chain(
+        (1..cells)
+            .map(move |i| i * length / cells)
+            .chain(std::iter::once(length.saturating_sub(1))),
+    )
+}
+
 fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
     let start = center.saturating_sub(LINE_THICKNESS / 2);
     let end = (start + LINE_THICKNESS).min(length);
@@ -466,7 +476,7 @@ fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize, show_letters: b
                 }
             }
         }
-        for y_center in axis_line_centers(h, GRID_ROWS) {
+        for y_center in axis_line_centers_y(h, GRID_ROWS) {
             for y in line_range(y_center, h) {
                 for x in 0..w {
                     let i = (y * w + x) * 4;
