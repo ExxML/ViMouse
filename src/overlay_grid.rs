@@ -1,6 +1,6 @@
 use crate::config::{
     GRID_ALPHA, GRID_BRIGHTNESS, GRID_LETTER_ALPHA, GRID_LETTER_BRIGHTNESS, GRID_LETTER_SIZE,
-    JUMP_GRID,
+    JUMP_GRID, LINE_THICKNESS,
 };
 use crate::state::MonitorInfo;
 use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -41,8 +41,6 @@ use x11_dl::xrender;
 
 const GRID_COLS: usize = JUMP_GRID[0].len();
 const GRID_ROWS: usize = JUMP_GRID.len();
-
-const LINE_THICKNESS: usize = 1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridOverlayState {
