@@ -1,3 +1,4 @@
+use crate::config::{DEFAULT_GRID_ENABLED, DEFAULT_GRID_LETTER_ENABLED};
 use rdev::{Button, Key};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -86,8 +87,8 @@ impl SharedState {
             left_button_down: false,
             right_button_down: false,
             pending_actions: Vec::new(),
-            show_grid: false,
-            show_grid_letters: false,
+            show_grid: DEFAULT_GRID_ENABLED,
+            show_grid_letters: DEFAULT_GRID_LETTER_ENABLED,
             motion_needed: true,
             move_key_pressed_at: HashMap::new(),
             pending_subcell: None,
