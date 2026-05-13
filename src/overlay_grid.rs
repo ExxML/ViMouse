@@ -1,6 +1,6 @@
 use crate::config::{
     GRID_ALPHA, GRID_BRIGHTNESS, GRID_LETTER_ALPHA, GRID_LETTER_BRIGHTNESS, GRID_LETTER_SIZE,
-    JUMP_GRID, LINE_THICKNESS,
+    JUMP_GRID, GRID_THICKNESS,
 };
 use crate::state::MonitorInfo;
 use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -216,8 +216,8 @@ fn axis_line_centers_y(length: usize, cells: usize) -> impl Iterator<Item = usiz
 }
 
 fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
-    let start = center.saturating_sub(LINE_THICKNESS / 2);
-    let end = (start + LINE_THICKNESS).min(length);
+    let start = center.saturating_sub(GRID_THICKNESS / 2);
+    let end = (start + GRID_THICKNESS).min(length);
     start..end
 }
 
