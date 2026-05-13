@@ -69,13 +69,13 @@ pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
 pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::AltGr;
 
 // Grid overlay line appearance
-pub const DEFAULT_GRID_ENABLED: bool = true; // Whether the grid overlay is enabled by default
+pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default
 pub const GRID_THICKNESS: usize = 1; // Thickness of grid lines in pixels
 pub const GRID_ALPHA: u8 = 160; // Opacity of grid lines (0–255)
 pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greyscale intensity 0-255)
 
 // Grid overlay letter appearance
-pub const DEFAULT_GRID_LETTER_ENABLED: bool = true; // Whether the grid letters is enabled by default
+pub const DEFAULT_GRID_LETTER_ENABLED: bool = false; // Whether the grid letters is enabled by default
 pub const GRID_LETTER_SIZE: usize = 2; // Scale multiplier for grid cell letters (1 = 8px, 2 = 16px, 3 = 24px, …)
 pub const GRID_LETTER_ALPHA: u8 = 224; // Opacity of grid cell letters (0–255)
 pub const GRID_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of grid cell letters (greyscale intensity 0-255)
