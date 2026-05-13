@@ -43,6 +43,7 @@ struct UISnapshot {
     selected_monitor: usize,
     overlay_icon: OverlayIconState,
     grid_state: GridOverlayState,
+    letters_state: GridOverlayState,
 }
 
 fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
@@ -60,6 +61,12 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
         },
         grid_state: GridOverlayState {
             visible: state.show_grid && state.mode == Mode::Normal,
+            show_letters: false,
+            monitor,
+        },
+        letters_state: GridOverlayState {
+            visible: state.show_grid_letters && state.mode == Mode::Normal,
+            show_letters: true,
             monitor,
         },
     }
@@ -75,6 +82,7 @@ struct GridSlot {
     window: Window,
     surface: GridSurface,
     monitor: MonitorInfo,
+    show_letters: bool,
 }
 
 fn create_overlay_icon_slots(
@@ -109,6 +117,7 @@ fn create_grid_slots(
     event_loop: &EventLoop<()>,
     first_window: Window,
     monitors: &[MonitorInfo],
+    show_letters: bool,
     #[cfg(target_os = "windows")] owner: windows_sys::Win32::Foundation::HWND,
 ) -> Vec<GridSlot> {
     let mut windows = Vec::with_capacity(monitors.len());
@@ -128,6 +137,7 @@ fn create_grid_slots(
             window,
             surface,
             monitor,
+            show_letters,
         });
     }
 
@@ -168,6 +178,7 @@ fn update_grid_slot(slot: &mut GridSlot, visible: bool) {
         &slot.window,
         &GridOverlayState {
             visible,
+            show_letters: slot.show_letters,
             monitor: slot.monitor,
         },
     );
@@ -219,6 +230,10 @@ fn main() {
     let bootstrap_grid_window = create_grid_window(&event_loop, grid_owner);
     #[cfg(not(target_os = "windows"))]
     let bootstrap_grid_window = create_grid_window(&event_loop);
+    #[cfg(target_os = "windows")]
+    let bootstrap_letters_window = create_grid_window(&event_loop, grid_owner);
+    #[cfg(not(target_os = "windows"))]
+    let bootstrap_letters_window = create_grid_window(&event_loop);
 
     let monitors = collect_monitors(&bootstrap_window);
     let initial_cursor = monitors
@@ -254,7 +269,7 @@ fn main() {
     );
     spawn_motion_loop(Arc::clone(&shared), motion_waker, ui_waker);
 
-    let (mut last_overlay_icon, mut last_grid_state, monitors) = {
+    let (mut last_overlay_icon, mut last_grid_state, mut last_letters_state, monitors) = {
         let state = shared.lock().expect("shared state poisoned");
         let monitor = state
             .monitors
@@ -268,6 +283,12 @@ fn main() {
             },
             GridOverlayState {
                 visible: state.show_grid && state.mode == Mode::Normal,
+                show_letters: false,
+                monitor,
+            },
+            GridOverlayState {
+                visible: state.show_grid_letters && state.mode == Mode::Normal,
+                show_letters: true,
                 monitor,
             },
             state.monitors.clone(),
@@ -289,10 +310,26 @@ fn main() {
     };
 
     #[cfg(target_os = "windows")]
-    let mut grid_slots =
-        create_grid_slots(&event_loop, bootstrap_grid_window, &monitors, grid_owner);
+    let mut grid_slots = create_grid_slots(
+        &event_loop,
+        bootstrap_grid_window,
+        &monitors,
+        false,
+        grid_owner,
+    );
     #[cfg(not(target_os = "windows"))]
-    let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors);
+    let mut grid_slots = create_grid_slots(&event_loop, bootstrap_grid_window, &monitors, false);
+    #[cfg(target_os = "windows")]
+    let mut letters_slots = create_grid_slots(
+        &event_loop,
+        bootstrap_letters_window,
+        &monitors,
+        true,
+        grid_owner,
+    );
+    #[cfg(not(target_os = "windows"))]
+    let mut letters_slots =
+        create_grid_slots(&event_loop, bootstrap_letters_window, &monitors, true);
 
     let mut last_selected_monitor = {
         let snap = current_ui_snapshot(&shared);
@@ -364,6 +401,34 @@ fn main() {
                     }
                 }
 
+                let letters_state = snap.letters_state;
+                if last_letters_state != letters_state {
+                    let was_visible = last_letters_state.visible;
+
+                    if last_selected_monitor != selected_monitor && last_letters_state.visible {
+                        letters_slots[last_selected_monitor]
+                            .window
+                            .set_visible(false);
+                    }
+
+                    last_letters_state = letters_state;
+                    update_grid_slot(
+                        &mut letters_slots[selected_monitor],
+                        last_letters_state.visible,
+                    );
+                    if was_visible && !last_letters_state.visible {
+                        if icon_changed {
+                            topmost_reassert_at = None;
+                            reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                        } else {
+                            topmost_reassert_at = Some(
+                                Instant::now()
+                                    + std::time::Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64),
+                            );
+                        }
+                    }
+                }
+
                 last_selected_monitor = selected_monitor;
 
                 if topmost_reassert_at.is_some_and(|d| Instant::now() >= d) {
@@ -384,6 +449,10 @@ fn main() {
                     } else if let Some(index) = find_grid_slot(&grid_slots, window_id) {
                         if index == last_selected_monitor {
                             update_grid_slot(&mut grid_slots[index], last_grid_state.visible);
+                        }
+                    } else if let Some(index) = find_grid_slot(&letters_slots, window_id) {
+                        if index == last_selected_monitor {
+                            update_grid_slot(&mut letters_slots[index], last_letters_state.visible);
                         }
                     }
                 }

@@ -65,10 +65,17 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 pub const JUMP_GRID_DELAY: f64 = 1.0;
 // Toggle jump grid overlay (Normal mode only)
 pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
+// Toggle grid cell letter overlay (Normal mode only)
+pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::ControlRight;
 
 // Grid overlay line appearance
 pub const GRID_ALPHA: u8 = 128; // Opacity of grid lines (0–255)
 pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greyscale intensity 0-255)
+
+// Grid overlay letter appearance
+pub const GRID_LETTER_SIZE: usize = 2; // Scale multiplier for grid cell letters (1 = 8px, 2 = 16px, 3 = 24px, …)
+pub const GRID_LETTER_ALPHA: u8 = 192; // Opacity of grid cell letters (0–255)
+pub const GRID_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of grid cell letters (greyscale intensity 0-255)
 
 // Quit chord
 pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];

@@ -1,5 +1,10 @@
-use crate::config::{GRID_ALPHA, GRID_BRIGHTNESS, JUMP_GRID};
+use crate::config::{
+    GRID_ALPHA, GRID_BRIGHTNESS, GRID_LETTER_ALPHA, GRID_LETTER_BRIGHTNESS, GRID_LETTER_SIZE,
+    JUMP_GRID,
+};
 use crate::state::MonitorInfo;
+use font8x8::{UnicodeFonts, BASIC_FONTS};
+use rdev::Key;
 #[cfg(target_os = "windows")]
 use std::ptr;
 #[cfg(target_os = "windows")]
@@ -43,6 +48,7 @@ const LINE_THICKNESS: usize = 1;
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridOverlayState {
     pub visible: bool,
+    pub show_letters: bool,
     pub monitor: MonitorInfo,
 }
 
@@ -81,7 +87,10 @@ impl GridSurface {
             position_grid_window(window, &state.monitor);
             self.positioned_monitor = Some(state.monitor);
         }
-        self.imp.as_mut().unwrap().paint(window, w, h);
+        self.imp
+            .as_mut()
+            .unwrap()
+            .paint(window, w, h, state.show_letters);
         window.set_visible(true);
     }
 }
@@ -90,9 +99,10 @@ impl GridSurface {
 
 #[cfg(target_os = "windows")]
 struct GridSurfaceImp {
-    // Pre-computed BGRA pixel cache. Empty until first paint; rebuilt on size change.
+    // Pre-computed BGRA pixel cache. Empty until first paint; rebuilt on size or letters change.
     pixel_cache: Vec<u32>,
     texture_size: (u32, u32),
+    cached_show_letters: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -101,18 +111,20 @@ impl GridSurfaceImp {
         Self {
             pixel_cache: Vec::new(),
             texture_size: (0, 0),
+            cached_show_letters: false,
         }
     }
 
-    fn paint(&mut self, window: &Window, w: u32, h: u32) {
+    fn paint(&mut self, window: &Window, w: u32, h: u32, show_letters: bool) {
         let hwnd = window.hwnd() as HWND;
 
-        // Build or rebuild cache when size changes.
-        if self.texture_size != (w, h) {
+        // Build or rebuild cache when size or letter visibility changes.
+        if self.texture_size != (w, h) || self.cached_show_letters != show_letters {
             let pixel_count = (w * h) as usize;
             self.pixel_cache = vec![0u32; pixel_count];
-            fill_grid_bgra_premult(&mut self.pixel_cache, w as usize, h as usize);
+            fill_grid_bgra_premult(&mut self.pixel_cache, w as usize, h as usize, show_letters);
             self.texture_size = (w, h);
+            self.cached_show_letters = show_letters;
         }
 
         let pixel_count = (w * h) as usize;
@@ -207,23 +219,37 @@ fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
 // Fill pre-multiplied BGRA pixels for UpdateLayeredWindow (DIB memory layout: B G R A bytes).
 // Pre-multiplied: R,G,B are multiplied by A/255.
 #[cfg(target_os = "windows")]
-fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
-    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
-    // Memory bytes: B=pm, G=pm, R=pm, A=GRID_ALPHA  →  little-endian u32
-    let line_pixel: u32 = pm | (pm << 8) | (pm << 16) | ((GRID_ALPHA as u32) << 24);
+fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize, show_letters: bool) {
+    if !show_letters {
+        let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
+        // Memory bytes: B=pm, G=pm, R=pm, A=GRID_ALPHA  →  little-endian u32
+        let line_pixel: u32 = pm | (pm << 8) | (pm << 16) | ((GRID_ALPHA as u32) << 24);
 
-    for x_center in axis_line_centers(w, GRID_COLS) {
-        for y in 0..h {
-            for x in line_range(x_center, w) {
-                pixels[y * w + x] = line_pixel;
+        for x_center in axis_line_centers(w, GRID_COLS) {
+            for y in 0..h {
+                for x in line_range(x_center, w) {
+                    pixels[y * w + x] = line_pixel;
+                }
+            }
+        }
+
+        for y_center in axis_line_centers(h, GRID_ROWS) {
+            for y in line_range(y_center, h) {
+                for x in 0..w {
+                    pixels[y * w + x] = line_pixel;
+                }
             }
         }
     }
 
-    for y_center in axis_line_centers(h, GRID_ROWS) {
-        for y in line_range(y_center, h) {
-            for x in 0..w {
-                pixels[y * w + x] = line_pixel;
+    if show_letters {
+        for (row, keys) in JUMP_GRID.iter().enumerate() {
+            let cy = (row * h / GRID_ROWS) + (h / GRID_ROWS / 2);
+            for (col, key) in keys.iter().enumerate() {
+                if let Some(ch) = key_label(*key) {
+                    let cx = (col * w / GRID_COLS) + (w / GRID_COLS / 2);
+                    blit_label_bgra_u32(pixels, w, h, cx, cy, ch);
+                }
             }
         }
     }
@@ -235,28 +261,31 @@ fn fill_grid_bgra_premult(pixels: &mut [u32], w: usize, h: usize) {
 struct GridSurfaceImp {
     pixel_cache: Vec<u8>,
     texture_size: (u32, u32),
+    cached_show_letters: bool,
 }
 
 #[cfg(target_os = "macos")]
 impl GridSurfaceImp {
     fn new(_window: &Window, w: u32, h: u32) -> Self {
         let mut pixel_cache = vec![0u8; (w * h * 4) as usize];
-        fill_grid_premult_bgra(&mut pixel_cache, w as usize, h as usize);
+        fill_grid_premult_bgra(&mut pixel_cache, w as usize, h as usize, false);
         Self {
             pixel_cache,
             texture_size: (w, h),
+            cached_show_letters: false,
         }
     }
 
-    fn paint(&mut self, window: &Window, w: u32, h: u32) {
+    fn paint(&mut self, window: &Window, w: u32, h: u32, show_letters: bool) {
         use core_graphics::base::{kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst};
         use core_graphics::color_space::CGColorSpace;
         use core_graphics::context::CGContext;
 
-        if self.texture_size != (w, h) {
+        if self.texture_size != (w, h) || self.cached_show_letters != show_letters {
             self.pixel_cache = vec![0u8; (w * h * 4) as usize];
-            fill_grid_premult_bgra(&mut self.pixel_cache, w as usize, h as usize);
+            fill_grid_premult_bgra(&mut self.pixel_cache, w as usize, h as usize, show_letters);
             self.texture_size = (w, h);
+            self.cached_show_letters = show_letters;
         }
 
         let color_space = CGColorSpace::create_device_rgb();
@@ -296,26 +325,29 @@ impl GridSurfaceImp {
 struct GridSurfaceImp {
     pixel_cache: Vec<u32>,
     texture_size: (u32, u32),
+    cached_show_letters: bool,
 }
 
 #[cfg(target_os = "linux")]
 impl GridSurfaceImp {
     fn new(_window: &Window, w: u32, h: u32) -> Self {
         let mut pixel_cache = vec![0u32; (w * h) as usize];
-        fill_grid_argb_premult(&mut pixel_cache, w as usize, h as usize);
+        fill_grid_argb_premult(&mut pixel_cache, w as usize, h as usize, false);
         Self {
             pixel_cache,
             texture_size: (w, h),
+            cached_show_letters: false,
         }
     }
 
-    fn paint(&mut self, window: &Window, w: u32, h: u32) {
+    fn paint(&mut self, window: &Window, w: u32, h: u32, show_letters: bool) {
         use std::mem::zeroed;
 
-        if self.texture_size != (w, h) {
+        if self.texture_size != (w, h) || self.cached_show_letters != show_letters {
             self.pixel_cache = vec![0u32; (w * h) as usize];
-            fill_grid_argb_premult(&mut self.pixel_cache, w as usize, h as usize);
+            fill_grid_argb_premult(&mut self.pixel_cache, w as usize, h as usize, show_letters);
             self.texture_size = (w, h);
+            self.cached_show_letters = show_letters;
         }
 
         let Some(display_ptr) = window.xlib_display() else {
@@ -422,7 +454,7 @@ impl GridSurfaceImp {
 // Pre-multiplied BGRA for macOS CGBitmapContext (kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst).
 // In memory: B G R A per pixel; as little-endian u32 = 0xAARRGGBB.
 #[cfg(target_os = "macos")]
-fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
+fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize, show_letters: bool) {
     // 2 physical pixels = 1pt on Retina; inset by 1px so edge lines aren't clipped
     // by the compositor at the physical pixel boundary.
     // 2 physical pixels wide so lines are 1pt on Retina and survive CALayer rendering.
@@ -447,26 +479,40 @@ fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
     };
 
     pixels.fill(0);
-    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32 / 255) as u8;
-    for x_center in x_centers(w) {
-        for y in 0..h {
-            for x in lr(x_center, w) {
-                let i = (y * w + x) * 4;
-                pixels[i] = pm;
-                pixels[i + 1] = pm;
-                pixels[i + 2] = pm;
-                pixels[i + 3] = GRID_ALPHA;
+    if !show_letters {
+        let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32 / 255) as u8;
+        for x_center in x_centers(w) {
+            for y in 0..h {
+                for x in lr(x_center, w) {
+                    let i = (y * w + x) * 4;
+                    pixels[i] = pm;
+                    pixels[i + 1] = pm;
+                    pixels[i + 2] = pm;
+                    pixels[i + 3] = GRID_ALPHA;
+                }
+            }
+        }
+        for y_center in y_centers(h) {
+            for y in lr(y_center, h) {
+                for x in 0..w {
+                    let i = (y * w + x) * 4;
+                    pixels[i] = pm;
+                    pixels[i + 1] = pm;
+                    pixels[i + 2] = pm;
+                    pixels[i + 3] = GRID_ALPHA;
+                }
             }
         }
     }
-    for y_center in y_centers(h) {
-        for y in lr(y_center, h) {
-            for x in 0..w {
-                let i = (y * w + x) * 4;
-                pixels[i] = pm;
-                pixels[i + 1] = pm;
-                pixels[i + 2] = pm;
-                pixels[i + 3] = GRID_ALPHA;
+
+    if show_letters {
+        for (row, keys) in JUMP_GRID.iter().enumerate() {
+            let cy = (row * h / GRID_ROWS) + (h / GRID_ROWS / 2);
+            for (col, key) in keys.iter().enumerate() {
+                if let Some(ch) = key_label(*key) {
+                    let cx = (col * w / GRID_COLS) + (w / GRID_COLS / 2);
+                    blit_label_bgra_u8(pixels, w, h, cx, cy, ch);
+                }
             }
         }
     }
@@ -474,21 +520,162 @@ fn fill_grid_premult_bgra(pixels: &mut [u8], w: usize, h: usize) {
 
 // Pre-multiplied ARGB for Linux XRender (native-endian u32 = 0xAARRGGBB).
 #[cfg(target_os = "linux")]
-fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize) {
+fn fill_grid_argb_premult(pixels: &mut [u32], w: usize, h: usize, show_letters: bool) {
     pixels.fill(0);
-    let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
-    let pixel: u32 = ((GRID_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
-    for x_center in axis_line_centers(w, GRID_COLS) {
-        for y in 0..h {
-            for x in line_range(x_center, w) {
-                pixels[y * w + x] = pixel;
+    if !show_letters {
+        let pm = (GRID_BRIGHTNESS as u32 * GRID_ALPHA as u32) / 255;
+        let pixel: u32 = ((GRID_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+        for x_center in axis_line_centers(w, GRID_COLS) {
+            for y in 0..h {
+                for x in line_range(x_center, w) {
+                    pixels[y * w + x] = pixel;
+                }
+            }
+        }
+        for y_center in axis_line_centers(h, GRID_ROWS) {
+            for y in line_range(y_center, h) {
+                for x in 0..w {
+                    pixels[y * w + x] = pixel;
+                }
             }
         }
     }
-    for y_center in axis_line_centers(h, GRID_ROWS) {
-        for y in line_range(y_center, h) {
-            for x in 0..w {
-                pixels[y * w + x] = pixel;
+
+    if show_letters {
+        for (row, keys) in JUMP_GRID.iter().enumerate() {
+            let cy = (row * h / GRID_ROWS) + (h / GRID_ROWS / 2);
+            for (col, key) in keys.iter().enumerate() {
+                if let Some(ch) = key_label(*key) {
+                    let cx = (col * w / GRID_COLS) + (w / GRID_COLS / 2);
+                    blit_label_argb_u32(pixels, w, h, cx, cy, ch);
+                }
+            }
+        }
+    }
+}
+
+// ── Grid letter helpers ───────────────────────────────────────────────────────
+
+fn key_label(key: Key) -> Option<char> {
+    match key {
+        Key::KeyA => Some('A'),
+        Key::KeyB => Some('B'),
+        Key::KeyC => Some('C'),
+        Key::KeyD => Some('D'),
+        Key::KeyE => Some('E'),
+        Key::KeyF => Some('F'),
+        Key::KeyG => Some('G'),
+        Key::KeyH => Some('H'),
+        Key::KeyI => Some('I'),
+        Key::KeyJ => Some('J'),
+        Key::KeyK => Some('K'),
+        Key::KeyL => Some('L'),
+        Key::KeyM => Some('M'),
+        Key::KeyN => Some('N'),
+        Key::KeyO => Some('O'),
+        Key::KeyP => Some('P'),
+        Key::KeyQ => Some('Q'),
+        Key::KeyR => Some('R'),
+        Key::KeyS => Some('S'),
+        Key::KeyT => Some('T'),
+        Key::KeyU => Some('U'),
+        Key::KeyV => Some('V'),
+        Key::KeyW => Some('W'),
+        Key::KeyX => Some('X'),
+        Key::KeyY => Some('Y'),
+        Key::KeyZ => Some('Z'),
+        _ => None,
+    }
+}
+
+// Blit an 8×8 font glyph centered at (cx, cy) into a u32 BGRA premultiplied pixel buffer.
+// pixel format: little-endian u32 where bytes are B G R A.
+#[cfg(target_os = "windows")]
+fn blit_label_bgra_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: usize, ch: char) {
+    let Some(glyph) = BASIC_FONTS.get(ch) else {
+        return;
+    };
+    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32) / 255;
+    let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((GRID_LETTER_ALPHA as u32) << 24);
+    let s = GRID_LETTER_SIZE.max(1);
+    let ox = cx.saturating_sub(4 * s);
+    let oy = cy.saturating_sub(4 * s);
+    for (row, bits) in glyph.iter().enumerate() {
+        for col in 0..8usize {
+            if (bits >> col) & 1 == 0 {
+                continue;
+            }
+            for dy in 0..s {
+                for dx in 0..s {
+                    let px = ox + col * s + dx;
+                    let py = oy + row * s + dy;
+                    if px < w && py < h {
+                        pixels[py * w + px] = pixel;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Blit an 8×8 font glyph centered at (cx, cy) into a u8×4 BGRA premultiplied pixel buffer.
+// pixel format: bytes B G R A (macOS CGBitmapContext kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst).
+#[cfg(target_os = "macos")]
+fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: usize, ch: char) {
+    let Some(glyph) = BASIC_FONTS.get(ch) else {
+        return;
+    };
+    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32 / 255) as u8;
+    let s = GRID_LETTER_SIZE.max(1);
+    let ox = cx.saturating_sub(4 * s);
+    let oy = cy.saturating_sub(4 * s);
+    for (row, bits) in glyph.iter().enumerate() {
+        for col in 0..8usize {
+            if (bits >> col) & 1 == 0 {
+                continue;
+            }
+            for dy in 0..s {
+                for dx in 0..s {
+                    let px = ox + col * s + dx;
+                    let py = oy + row * s + dy;
+                    if px < w && py < h {
+                        let i = (py * w + px) * 4;
+                        pixels[i] = pm;
+                        pixels[i + 1] = pm;
+                        pixels[i + 2] = pm;
+                        pixels[i + 3] = GRID_LETTER_ALPHA;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Blit an 8×8 font glyph centered at (cx, cy) into a u32 ARGB premultiplied pixel buffer.
+// pixel format: native-endian u32 = 0xAARRGGBB.
+#[cfg(target_os = "linux")]
+fn blit_label_argb_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: usize, ch: char) {
+    let Some(glyph) = BASIC_FONTS.get(ch) else {
+        return;
+    };
+    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32) / 255;
+    let pixel: u32 = ((GRID_LETTER_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    let s = GRID_LETTER_SIZE.max(1);
+    let ox = cx.saturating_sub(4 * s);
+    let oy = cy.saturating_sub(4 * s);
+    for (row, bits) in glyph.iter().enumerate() {
+        for col in 0..8usize {
+            if (bits >> col) & 1 == 0 {
+                continue;
+            }
+            for dy in 0..s {
+                for dx in 0..s {
+                    let px = ox + col * s + dx;
+                    let py = oy + row * s + dy;
+                    if px < w && py < h {
+                        pixels[py * w + px] = pixel;
+                    }
+                }
             }
         }
     }

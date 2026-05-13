@@ -69,6 +69,7 @@ pub struct SharedState {
     pub right_button_down: bool,
     pub pending_actions: Vec<Action>,
     pub show_grid: bool,
+    pub show_grid_letters: bool,
     pub motion_needed: bool,
     pub move_key_pressed_at: HashMap<Key, Instant>,
     pub pending_subcell: Option<(u8, u8, Instant)>, // Pending subcell state: (cell_col, cell_row, timestamp of first jump)
@@ -86,6 +87,7 @@ impl SharedState {
             right_button_down: false,
             pending_actions: Vec::new(),
             show_grid: false,
+            show_grid_letters: false,
             motion_needed: true,
             move_key_pressed_at: HashMap::new(),
             pending_subcell: None,

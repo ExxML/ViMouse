@@ -2,8 +2,8 @@ use crate::config::{
     ACCEL_DELAY_SECS, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER,
     JUMP_GRID, JUMP_GRID_DELAY, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
     KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
-    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
-    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
+    SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -269,6 +269,7 @@ fn handle_key_press(
                 || key == KEY_LEFT_CLICK
                 || key == KEY_RIGHT_CLICK
                 || key == KEY_TOGGLE_GRID
+                || key == KEY_TOGGLE_GRID_LETTERS
                 || is_jump_key(key)
                 || (key == Key::CapsLock && caps_lock_used_in_config())
             {
@@ -373,6 +374,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
         KEY_LEFT_CLICK => press_mouse_button(state, Button::Left),
         KEY_RIGHT_CLICK => press_mouse_button(state, Button::Right),
         KEY_TOGGLE_GRID => state.show_grid = !state.show_grid,
+        KEY_TOGGLE_GRID_LETTERS => state.show_grid_letters = !state.show_grid_letters,
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
             state.pressed_keys.insert(key);
             state
@@ -884,6 +886,7 @@ fn is_runtime_modifier(key: Key) -> bool {
 struct UiStateSnapshot {
     mode: Mode,
     show_grid: bool,
+    show_grid_letters: bool,
     selected_monitor: usize,
 }
 
@@ -891,6 +894,7 @@ fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
     UiStateSnapshot {
         mode: state.mode,
         show_grid: state.show_grid,
+        show_grid_letters: state.show_grid_letters,
         selected_monitor: state.selected_monitor,
     }
 }
@@ -908,6 +912,7 @@ pub fn caps_lock_used_in_config() -> bool {
             KEY_RIGHT_CLICK,
             KEY_CYCLE_MONITOR,
             KEY_TOGGLE_GRID,
+            KEY_TOGGLE_GRID_LETTERS,
             KEY_MOVE_LEFT,
             KEY_MOVE_DOWN,
             KEY_MOVE_UP,
