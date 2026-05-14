@@ -336,7 +336,18 @@ fn configure_platform_overlay_window(window: &Window) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn configure_platform_overlay_window(window: &Window) {
+    unsafe {
+        use objc::runtime::Object;
+        use winit::platform::macos::WindowExtMacOS;
+        let ns_window = window.ns_window() as *mut Object;
+        // Level 102: above grid (21) and app dock (20), so icon is topmost.
+        let _: () = msg_send![ns_window, setLevel: 102i64];
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn configure_platform_overlay_window(_window: &Window) {}
 
 #[cfg(target_os = "windows")]
@@ -377,5 +388,23 @@ pub fn reassert_topmost(window: &Window) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+pub fn reassert_topmost(window: &Window) {
+    let Some(display) = window.xlib_display() else {
+        return;
+    };
+    let Some(xwindow) = window.xlib_window() else {
+        return;
+    };
+    let Ok(xlib) = xlib::Xlib::open() else {
+        return;
+    };
+    unsafe {
+        let display = display as *mut xlib::Display;
+        (xlib.XRaiseWindow)(display, xwindow);
+        (xlib.XFlush)(display);
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn reassert_topmost(_window: &Window) {}

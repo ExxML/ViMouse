@@ -816,8 +816,8 @@ fn platform_configure_grid_window(window: &Window) {
     unsafe {
         use objc::runtime::Object;
         let ns_window = window.ns_window() as *mut Object;
-        // NSPopUpMenuWindowLevel (101) sits above the dock (level 20) and most system UI.
-        let _: () = msg_send![ns_window, setLevel: 101i64];
+        // kCGDockWindowLevel is 20; use 21 so the grid sits just above the dock but below the icon (102).
+        let _: () = msg_send![ns_window, setLevel: 21i64];
     }
 }
 

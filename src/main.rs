@@ -384,6 +384,9 @@ fn main() {
 
                     last_grid_state = grid_state;
                     update_grid_slot(&mut grid_slots[selected_monitor], last_grid_state.visible);
+                    if !was_visible && last_grid_state.visible {
+                        reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                    }
                     if was_visible && !last_grid_state.visible {
                         if icon_changed {
                             // Grid hid because mode changed. Reassert topmost immediately since
