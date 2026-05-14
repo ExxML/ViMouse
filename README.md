@@ -86,12 +86,14 @@ The screen is divided into a 5×3 grid - press the labeled key to warp the curso
 └───────┴───────┴───────┴───────┴───────┘
 ```
 - Each cell is also divided into a 5×3 grid. Press a second jump grid key within 1 second to jump to a subcell within the current cell.
-- Press `Right Shift` to toggle a reference grid overlay to serve as a guide for where to jump.
+- Press `Right Shift` to toggle a reference jump grid overlay to serve as a guide for where to jump.
+- Press `Right Alt` to toggle a reference grid of letters that show where you will jump for each letter.
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
 
 > [!TIP]
 > It is recommended to use the jump grid as your primary method of navigation and only use the cursor movement keys (HJKL) for micro-adjustments.
+> If you wish to use the reference grid overlay or grid letters, there are many customization options available in `src/config.rs`. 
 
 ---
 
