@@ -221,7 +221,9 @@ fn axis_line_centers_y(length: usize, cells: usize) -> impl Iterator<Item = usiz
 }
 
 fn line_range(center: usize, length: usize) -> std::ops::Range<usize> {
-    let start = center.saturating_sub(GRID_THICKNESS / 2);
+    let start = center
+        .saturating_sub(GRID_THICKNESS / 2)
+        .min(length.saturating_sub(GRID_THICKNESS));
     let end = (start + GRID_THICKNESS).min(length);
     start..end
 }
