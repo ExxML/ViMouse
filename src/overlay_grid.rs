@@ -1,6 +1,6 @@
 use crate::config::{
     GRID_ALPHA, GRID_BRIGHTNESS, GRID_LETTER_ALPHA, GRID_LETTER_BRIGHTNESS, GRID_LETTER_SIZE,
-    JUMP_GRID, GRID_THICKNESS,
+    GRID_THICKNESS, JUMP_GRID,
 };
 use crate::state::MonitorInfo;
 use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -11,8 +11,9 @@ use std::ptr;
 use windows_sys::Win32::Foundation::{HWND, POINT, SIZE};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
-    AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS,
+    CreateCompatibleDC, CreateDIBSection, CreateRectRgn, DeleteDC, DeleteObject, GetDC, ReleaseDC,
+    SelectObject, SetWindowRgn, AC_SRC_ALPHA, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION,
+    DIB_RGB_COLORS,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -188,6 +189,10 @@ impl GridSurfaceImp {
             UpdateLayeredWindow(
                 hwnd, screen_dc, &pt_dst, &sz, mem_dc, &pt_src, 0, &blend, ULW_ALPHA,
             );
+
+            // Force rectangular window region so DWM doesn't round the corners.
+            let rgn = CreateRectRgn(0, 0, w as i32, h as i32);
+            SetWindowRgn(hwnd, rgn, 0);
 
             SelectObject(mem_dc, old_bm);
             DeleteObject(hbm);
