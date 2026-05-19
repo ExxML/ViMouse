@@ -74,7 +74,7 @@ There is no scroll acceleration by default, but this can be modified in `src/con
 
 ### Jump Grid
 
-The screen is divided into a 5×3 grid - press the labeled key to warp the cursor to that cell's center.
+The screen is divided into a 5×3 grid - press the labeled key to teleport the cursor to that cell's center.
 
 ```
 ┌───────┬───────┬───────┬───────┬───────┐
