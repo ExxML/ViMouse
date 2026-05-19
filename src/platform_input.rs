@@ -7,6 +7,7 @@ use core_graphics::event::{
 };
 #[cfg(target_os = "macos")]
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+use rdev::Button;
 #[cfg(target_os = "linux")]
 use rdev::Button;
 use rdev::{simulate, EventType};
@@ -23,6 +24,20 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
 #[cfg(target_os = "linux")]
 use x11_dl::xlib::Xlib;
+
+// Platform-specific button codes for mouse buttons 4 and 5 (back/forward)
+#[cfg(target_os = "windows")]
+pub const BUTTON_MOUSE_4: Button = Button::Unknown(1);
+#[cfg(target_os = "windows")]
+pub const BUTTON_MOUSE_5: Button = Button::Unknown(2);
+#[cfg(target_os = "linux")]
+pub const BUTTON_MOUSE_4: Button = Button::Unknown(8);
+#[cfg(target_os = "linux")]
+pub const BUTTON_MOUSE_5: Button = Button::Unknown(9);
+#[cfg(target_os = "macos")]
+pub const BUTTON_MOUSE_4: Button = Button::Unknown(3);
+#[cfg(target_os = "macos")]
+pub const BUTTON_MOUSE_5: Button = Button::Unknown(4);
 
 static SIMULATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

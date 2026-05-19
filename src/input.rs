@@ -1,14 +1,17 @@
 use crate::config::{
     ACCEL_DELAY_SECS, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER,
     JUMP_GRID, JUMP_GRID_DELAY, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
-    KEY_LEFT_CLICK, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE,
-    KEY_RIGHT_CLICK, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
-    SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT,
+    KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID,
+    KEY_TOGGLE_GRID_LETTERS, SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED,
+    SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
-use crate::platform_input::{shutdown_platform_input, simulate_input, InputEmitter};
+use crate::platform_input::{
+    shutdown_platform_input, simulate_input, InputEmitter, BUTTON_MOUSE_4, BUTTON_MOUSE_5,
+};
 use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
@@ -238,12 +241,9 @@ fn handle_key_press(
             {
                 true
             }
-            // Click keys and scroll-mode move keys capture even when OS modifiers
-            // (Ctrl/Alt/Shift/Meta) are held, so the OS modifier state is preserved on the
-            // resulting button/scroll event.
-            else if (key == KEY_LEFT_CLICK || key == KEY_RIGHT_CLICK)
-                && !has_uncaptured_non_modifier_non_os(&tracker, key)
-            {
+            // Mouse keys capture even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
+            // so the OS modifier state is preserved on the resulting button/scroll event.
+            else if is_mouse_key(key) && !has_uncaptured_non_modifier_non_os(&tracker, key) {
                 true
             }
             // Capture move keys mid-scroll so modifier state is preserved on the scroll event
@@ -266,8 +266,6 @@ fn handle_key_press(
             // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
             else if key == KEY_INSERT_MODE
                 || key == KEY_CYCLE_MONITOR
-                || key == KEY_LEFT_CLICK
-                || key == KEY_RIGHT_CLICK
                 || key == KEY_TOGGLE_GRID
                 || key == KEY_TOGGLE_GRID_LETTERS
                 || is_jump_key(key)
@@ -341,17 +339,16 @@ fn handle_key_release(
                     wake_motion = true;
                 }
             }
-            KEY_LEFT_CLICK => {
-                release_mouse_button(&mut state, Button::Left);
-                state.motion_needed = true;
-                wake_motion = true;
-            }
-            KEY_RIGHT_CLICK => {
-                release_mouse_button(&mut state, Button::Right);
-                state.motion_needed = true;
-                wake_motion = true;
-            }
+            KEY_MOUSE_1 => release_mouse_button(&mut state, Button::Left),
+            KEY_MOUSE_2 => release_mouse_button(&mut state, Button::Right),
+            KEY_MOUSE_3 => release_mouse_button(&mut state, Button::Middle),
+            KEY_MOUSE_4 => release_mouse_button(&mut state, BUTTON_MOUSE_4),
+            KEY_MOUSE_5 => release_mouse_button(&mut state, BUTTON_MOUSE_5),
             _ => {}
+        }
+        if is_mouse_key(key) {
+            state.motion_needed = true;
+            wake_motion = true;
         }
     }
 
@@ -371,8 +368,11 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
         KEY_INSERT_MODE => enter_insert_mode(state),
         KEY_NORMAL_MODE => {}
         KEY_CYCLE_MONITOR => cycle_monitor(state),
-        KEY_LEFT_CLICK => press_mouse_button(state, Button::Left),
-        KEY_RIGHT_CLICK => press_mouse_button(state, Button::Right),
+        KEY_MOUSE_1 => press_mouse_button(state, Button::Left),
+        KEY_MOUSE_2 => press_mouse_button(state, Button::Right),
+        KEY_MOUSE_3 => press_mouse_button(state, Button::Middle),
+        KEY_MOUSE_4 => press_mouse_button(state, BUTTON_MOUSE_4),
+        KEY_MOUSE_5 => press_mouse_button(state, BUTTON_MOUSE_5),
         KEY_TOGGLE_GRID => state.show_grid = !state.show_grid,
         KEY_TOGGLE_GRID_LETTERS => state.show_grid_letters = !state.show_grid_letters,
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
@@ -468,6 +468,9 @@ fn press_mouse_button(state: &mut SharedState, button: Button) {
                 .pending_actions
                 .push(Action::ButtonPress(Button::Right));
         }
+        Button::Middle | Button::Unknown(_) => {
+            state.pending_actions.push(Action::ButtonPress(button));
+        }
         _ => {}
     }
 }
@@ -485,6 +488,9 @@ fn release_mouse_button(state: &mut SharedState, button: Button) {
             state
                 .pending_actions
                 .push(Action::ButtonRelease(Button::Right));
+        }
+        Button::Middle | Button::Unknown(_) => {
+            state.pending_actions.push(Action::ButtonRelease(button));
         }
         _ => {}
     }
@@ -870,6 +876,13 @@ fn is_move_key(key: Key) -> bool {
     MOVE_KEYS.contains(&key)
 }
 
+fn is_mouse_key(key: Key) -> bool {
+    matches!(
+        key,
+        KEY_MOUSE_1 | KEY_MOUSE_2 | KEY_MOUSE_3 | KEY_MOUSE_4 | KEY_MOUSE_5
+    )
+}
+
 fn is_jump_key(key: Key) -> bool {
     static JUMP_KEYS: std::sync::OnceLock<HashSet<Key>> = std::sync::OnceLock::new();
     let set = JUMP_KEYS.get_or_init(|| JUMP_GRID.iter().flatten().copied().collect());
@@ -908,8 +921,11 @@ pub fn caps_lock_used_in_config() -> bool {
             KEY_SCROLL,
             KEY_FAST,
             KEY_SLOW,
-            KEY_LEFT_CLICK,
-            KEY_RIGHT_CLICK,
+            KEY_MOUSE_1,
+            KEY_MOUSE_2,
+            KEY_MOUSE_3,
+            KEY_MOUSE_4,
+            KEY_MOUSE_5,
             KEY_CYCLE_MONITOR,
             KEY_TOGGLE_GRID,
             KEY_TOGGLE_GRID_LETTERS,

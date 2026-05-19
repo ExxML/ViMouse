@@ -38,8 +38,11 @@ pub const KEY_MOVE_UP: Key = Key::KeyK;
 pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 
 // Mouse button keys
-pub const KEY_LEFT_CLICK: Key = Key::SemiColon;
-pub const KEY_RIGHT_CLICK: Key = Key::Quote;
+pub const KEY_MOUSE_1: Key = Key::SemiColon;
+pub const KEY_MOUSE_2: Key = Key::Quote;
+pub const KEY_MOUSE_3: Key = Key::KeyM;
+pub const KEY_MOUSE_4: Key = Key::KeyO;
+pub const KEY_MOUSE_5: Key = Key::KeyP;
 pub const KEY_SCROLL: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
 
 // Speed modifier keys for cursor movement and scrolling (recommend using modifier or non-text keys)
