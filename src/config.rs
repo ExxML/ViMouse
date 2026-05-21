@@ -68,9 +68,9 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 // - Set to 0.0 to disable subcell jumps
 pub const JUMP_GRID_DELAY: f64 = 1.0;
 // Toggle jump grid overlay (Normal mode only)
-pub const KEY_TOGGLE_GRID: Key = Key::ShiftRight;
+pub const KEY_TOGGLE_GRID: Key = Key::Slash;
 // Toggle grid cell letter overlay (Normal mode only)
-pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::AltGr;
+pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::ShiftRight;
 
 // Grid overlay line appearance
 pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default
