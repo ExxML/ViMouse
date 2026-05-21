@@ -85,4 +85,4 @@ pub const GRID_LETTER_ALPHA: u8 = 224; // Opacity of grid cell letters (0–255)
 pub const GRID_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of grid cell letters (greyscale intensity 0-255)
 
 // Quit chord
-pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::ShiftLeft, Key::KeyQ];
+pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];

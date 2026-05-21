@@ -101,7 +101,7 @@ Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and j
 
 | Key | Action |
 |-----|--------|
-| `Ctrl + Shift + Q` | Quit ViMouse |
+| `Ctrl + Alt + Shift + Q` | Quit ViMouse |
 
 ## Installation
 
