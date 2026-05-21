@@ -617,6 +617,12 @@ impl PlatformEmitter {
             Action::ButtonRelease(rdev::Button::Right) => {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
+            Action::ButtonPress(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
+                return emit_other_mouse_button(&self.source, CGEventType::OtherMouseDown, self.last_cursor, other_button_index(b));
+            }
+            Action::ButtonRelease(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
+                return emit_other_mouse_button(&self.source, CGEventType::OtherMouseUp, self.last_cursor, other_button_index(b));
+            }
             Action::Scroll { delta_x, delta_y } => {
                 // 48.0 accurately scales ViMouse scroll units to macOS pixel units.
                 const PIXELS_PER_UNIT: f64 = 48.0;
@@ -633,9 +639,6 @@ impl PlatformEmitter {
                 .map_err(|_| "CGEvent scroll creation failed".to_string())?;
                 event.post(core_graphics::event::CGEventTapLocation::HID);
                 return Ok(());
-            }
-            _ => {
-                return simulate_input(&action_to_event_type(action, 1.0));
             }
         };
 
@@ -660,6 +663,45 @@ impl PlatformEmitter {
 
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn other_button_index(button: &rdev::Button) -> u32 {
+    match button {
+        rdev::Button::Middle => 2,
+        rdev::Button::Unknown(n) => *n as u32,
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn emit_other_mouse_button(
+    source: &core_graphics::event_source::CGEventSource,
+    event_type: CGEventType,
+    position: core_graphics::geometry::CGPoint,
+    button: u32,
+) -> Result<(), String> {
+    use foreign_types_shared::ForeignType;
+    extern "C" {
+        fn CGEventCreateMouseEvent(
+            source: *mut std::ffi::c_void,
+            mouse_type: CGEventType,
+            mouse_cursor_position: core_graphics::geometry::CGPoint,
+            mouse_button: u32,
+        ) -> *mut std::ffi::c_void;
+        fn CGEventPost(tap: CGEventTapLocation, event: *mut std::ffi::c_void);
+        fn CFRelease(cf: *mut std::ffi::c_void);
+    }
+    unsafe {
+        let event_ref =
+            CGEventCreateMouseEvent(source.as_ptr() as *mut _, event_type, position, button);
+        if event_ref.is_null() {
+            return Err("CGEvent other mouse event creation failed".to_string());
+        }
+        CGEventPost(CGEventTapLocation::HID, event_ref);
+        CFRelease(event_ref);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
