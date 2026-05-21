@@ -37,7 +37,7 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 | Modifier | Effect |
 |----------|--------|
 | `Space` (hold) | 2× speed |
-| `Alt` (hold) | 0.3× speed |
+| `Left Alt` (hold) | 0.3× speed |
 
 Tap a move key to move the cursor 100 px/sec. Hold to move 500 px/sec.
 
@@ -57,7 +57,7 @@ For example:
 
 Hold `Left Shift` + `H` / `J` / `K` / `L` to scroll.
 
-Scrolling features the same `Space` / `Alt` speed modifiers as [Cursor Movement](#cursor-movement).
+Scrolling features the same `Space` / `Left Alt` speed modifiers as [Cursor Movement](#cursor-movement).
 
 There is no scroll acceleration by default, but this can be modified in `src/config.rs`.
 
@@ -101,7 +101,7 @@ Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and j
 
 | Key | Action |
 |-----|--------|
-| `Ctrl + Alt + Shift + Q` | Quit ViMouse |
+| `Left Ctrl + Left Alt + Left Shift + Q` | Quit ViMouse |
 
 ## Installation
 
