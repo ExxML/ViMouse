@@ -70,9 +70,9 @@ pub const JUMP_GRID_DELAY: f64 = 1.0;
 // Toggle jump grid overlay (Normal mode only)
 pub const KEY_TOGGLE_GRID: Key = Key::Slash;
 // Toggle grid cell letter overlay (Normal mode only)
-pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::ShiftRight;
+pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Dot;
 // Toggle all overlays (icon, grid, and letters), available in all modes
-pub const KEY_TOGGLE_OVERLAY: Key = Key::AltGr;
+pub const KEY_TOGGLE_OVERLAY: Key = Key::ShiftRight;
 
 // Grid overlay line appearance
 pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default

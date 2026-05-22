@@ -87,7 +87,7 @@ The screen is divided into a 5×3 grid - press the labeled key to teleport the c
 ```
 - Each cell is also divided into a 5×3 grid. Press a second jump grid key within 1 second to jump to a subcell within the current cell.
 - Press `Slash` to toggle a reference jump grid overlay to serve as a guide for where to jump.
-- Press `Right Shift` to toggle a reference grid of letters that show where you will jump for each letter.
+- Press `Period` to toggle a reference grid of letters that show where you will jump for each letter.
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
 
@@ -101,6 +101,7 @@ Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and j
 
 | Key | Action |
 |-----|--------|
+| `Right Shift` | Toggle ViMouse overlay |
 | `Left Ctrl + Left Alt + Left Shift + Q` | Quit ViMouse |
 
 ## Installation
