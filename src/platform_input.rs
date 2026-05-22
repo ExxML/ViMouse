@@ -618,10 +618,20 @@ impl PlatformEmitter {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
             Action::ButtonPress(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
-                return emit_other_mouse_button(&self.source, CGEventType::OtherMouseDown, self.last_cursor, other_button_index(b));
+                return emit_other_mouse_button(
+                    &self.source,
+                    CGEventType::OtherMouseDown,
+                    self.last_cursor,
+                    other_button_index(b),
+                );
             }
             Action::ButtonRelease(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
-                return emit_other_mouse_button(&self.source, CGEventType::OtherMouseUp, self.last_cursor, other_button_index(b));
+                return emit_other_mouse_button(
+                    &self.source,
+                    CGEventType::OtherMouseUp,
+                    self.last_cursor,
+                    other_button_index(b),
+                );
             }
             Action::Scroll { delta_x, delta_y } => {
                 // 48.0 accurately scales ViMouse scroll units to macOS pixel units.
