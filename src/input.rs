@@ -3,8 +3,8 @@ use crate::config::{
     JUMP_GRID, JUMP_GRID_DELAY, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
     KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT,
     KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID,
-    KEY_TOGGLE_GRID_LETTERS, SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED,
-    SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -231,51 +231,56 @@ fn handle_key_press(
         std::process::exit(0);
     }
 
-    let should_capture = match state.mode {
-        Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
-        Mode::Normal => {
-            #[allow(clippy::if_same_then_else)]
-            // KEY_FAST/KEY_SLOW only captured when scroll/move active.
-            if (key == KEY_FAST || key == KEY_SLOW)
-                && (tracker.held_keys.contains(&KEY_SCROLL) || movement_active(&state.pressed_keys))
-            {
-                true
-            }
-            // Mouse keys capture even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
-            // so the OS modifier state is preserved on the resulting button/scroll event.
-            else if is_mouse_key(key) && !has_uncaptured_non_modifier_non_os(&tracker, key) {
-                true
-            }
-            // Capture move keys mid-scroll so modifier state is preserved on the scroll event
-            // (same rationale as click keys above).
-            else if is_move_key(key)
-                && scroll_mode_active(&state.pressed_keys)
-                && !has_uncaptured_non_modifier_non_os(&tracker, key)
-            {
-                true
-            }
-            // If a non-ViMouse key started the chord, let the rest of that chord pass through.
-            else if has_uncaptured_non_modifier(&tracker, key) {
-                false
-            }
-            // Always capture move keys (no scroll active); handled above if scroll active.
-            else if is_move_key(key) {
-                true
-            }
-            // Capture ViMouse action keys, but only when no modifiers are held to avoid
-            // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
-            else if key == KEY_INSERT_MODE
-                || key == KEY_CYCLE_MONITOR
-                || key == KEY_TOGGLE_GRID
-                || key == KEY_TOGGLE_GRID_LETTERS
-                || is_jump_key(key)
-                || (key == Key::CapsLock && caps_lock_used_in_config())
-            {
-                no_modifiers_held(&tracker.held_keys)
-            }
-            // Let all non-ViMouse keys pass through.
-            else {
-                false
+    let should_capture = if key == KEY_TOGGLE_OVERLAY && no_modifiers_held(&tracker.held_keys) {
+        true
+    } else {
+        match state.mode {
+            Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
+            Mode::Normal => {
+                #[allow(clippy::if_same_then_else)]
+                // KEY_FAST/KEY_SLOW only captured when scroll/move active.
+                if (key == KEY_FAST || key == KEY_SLOW)
+                    && (tracker.held_keys.contains(&KEY_SCROLL)
+                        || movement_active(&state.pressed_keys))
+                {
+                    true
+                }
+                // Mouse keys capture even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
+                // so the OS modifier state is preserved on the resulting button/scroll event.
+                else if is_mouse_key(key) && !has_uncaptured_non_modifier_non_os(&tracker, key) {
+                    true
+                }
+                // Capture move keys mid-scroll so modifier state is preserved on the scroll event
+                // (same rationale as click keys above).
+                else if is_move_key(key)
+                    && scroll_mode_active(&state.pressed_keys)
+                    && !has_uncaptured_non_modifier_non_os(&tracker, key)
+                {
+                    true
+                }
+                // If a non-ViMouse key started the chord, let the rest of that chord pass through.
+                else if has_uncaptured_non_modifier(&tracker, key) {
+                    false
+                }
+                // Always capture move keys (no scroll active); handled above if scroll active.
+                else if is_move_key(key) {
+                    true
+                }
+                // Capture ViMouse action keys, but only when no modifiers are held to avoid
+                // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
+                else if key == KEY_INSERT_MODE
+                    || key == KEY_CYCLE_MONITOR
+                    || key == KEY_TOGGLE_GRID
+                    || key == KEY_TOGGLE_GRID_LETTERS
+                    || is_jump_key(key)
+                    || (key == Key::CapsLock && caps_lock_used_in_config())
+                {
+                    no_modifiers_held(&tracker.held_keys)
+                }
+                // Let all non-ViMouse keys pass through.
+                else {
+                    false
+                }
             }
         }
     };
@@ -289,13 +294,17 @@ fn handle_key_press(
     // Snapshot UI-visible state before applying the key action so we can detect changes.
     let ui_before = ui_snapshot(&state);
 
-    match state.mode {
-        Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
-        Mode::Normal => {
-            if !is_jump_key(key) {
-                state.pending_subcell = None;
+    if key == KEY_TOGGLE_OVERLAY {
+        state.show_overlays = !state.show_overlays;
+    } else {
+        match state.mode {
+            Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
+            Mode::Normal => {
+                if !is_jump_key(key) {
+                    state.pending_subcell = None;
+                }
+                apply_normal_mode_press(&mut state, key);
             }
-            apply_normal_mode_press(&mut state, key);
         }
     }
     sync_runtime_modifier_suppression(&state, &mut tracker);
@@ -900,6 +909,7 @@ struct UiStateSnapshot {
     mode: Mode,
     show_grid: bool,
     show_grid_letters: bool,
+    show_overlays: bool,
     selected_monitor: usize,
 }
 
@@ -908,6 +918,7 @@ fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
         mode: state.mode,
         show_grid: state.show_grid,
         show_grid_letters: state.show_grid_letters,
+        show_overlays: state.show_overlays,
         selected_monitor: state.selected_monitor,
     }
 }

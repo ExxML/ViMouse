@@ -71,6 +71,7 @@ pub struct SharedState {
     pub pending_actions: Vec<Action>,
     pub show_grid: bool,
     pub show_grid_letters: bool,
+    pub show_overlays: bool,
     pub motion_needed: bool,
     pub move_key_pressed_at: HashMap<Key, Instant>,
     pub pending_subcell: Option<(u8, u8, Instant)>, // Pending subcell state: (cell_col, cell_row, timestamp of first jump)
@@ -89,6 +90,7 @@ impl SharedState {
             pending_actions: Vec::new(),
             show_grid: DEFAULT_GRID_ENABLED,
             show_grid_letters: DEFAULT_GRID_LETTER_ENABLED,
+            show_overlays: true,
             motion_needed: true,
             move_key_pressed_at: HashMap::new(),
             pending_subcell: None,
