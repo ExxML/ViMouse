@@ -255,8 +255,11 @@ pub mod macos_grab {
                     let was_down = CAPS_LOCK_KEY_DOWN;
                     CAPS_LOCK_KEY_DOWN = !was_down;
                     !was_down
-                } else {
+                } else if is_known_modifier_code(code) {
                     modifier_flag_active(code, CGEventGetFlags(raw_event))
+                } else {
+                    // Unknown code in FlagsChanged — not a real modifier event; ignore.
+                    return None;
                 };
 
                 if is_press {
@@ -290,6 +293,10 @@ pub mod macos_grab {
             _ => 0,
         };
         flags & modifier_flag != 0
+    }
+
+    fn is_known_modifier_code(code: u16) -> bool {
+        matches!(code, 54 | 55 | 56 | 58 | 59 | 60 | 61 | 62 | 63)
     }
 
     fn key_from_code(code: u16) -> Key {
