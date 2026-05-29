@@ -672,6 +672,21 @@ impl PlatformEmitter {
         };
 
         if matches!(action, Action::ButtonPress(_)) {
+            // Sync last_cursor from the OS in case the physical mouse moved since the last
+            // synthetic MouseMove — otherwise button events fire at the stale position.
+            extern "C" {
+                fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+                fn CGEventGetLocation(event: *mut std::ffi::c_void) -> core_graphics::geometry::CGPoint;
+                fn CFRelease(cf: *mut std::ffi::c_void);
+            }
+            unsafe {
+                let ev = CGEventCreate(std::ptr::null());
+                if !ev.is_null() {
+                    self.last_cursor = CGEventGetLocation(ev);
+                    CFRelease(ev);
+                }
+            }
+
             let is_left = matches!(cg_button, CGMouseButton::Left);
             let same_button = self.last_press_left == Some(is_left);
             self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW
