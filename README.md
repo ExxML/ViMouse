@@ -106,9 +106,12 @@ Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and j
 
 ## Installation
 
+> [!IMPORTANT]
+> Some (less advanced) keyboards may exhibit ghosting behaviour- they use a simple row/column matrix without diodes on each key switch. This means that certain three-key combinations may fail to register, causing some ViMouse keybindings to not work. This is a hardware limitation and there is unfortunately no possible software fix for this.
+
 ### Prerequisites
 
-- [Rust toolchain](https://rustup.rs/) (stable)
+- [Rust toolchain](https://rustup.rs) (stable)
 
 ### macOS
 
@@ -131,7 +134,7 @@ cargo build --release
 
 This program can be ran from `target/release/vimouse.exe`.
 
-> [!NOTE]
+> [!IMPORTANT]
 > Known Limitations on Windows:
 > - Unless ViMouse is launched with administrator privileges, it cannot interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
 >   - You can use Task Scheduler to run the .exe with elevated privileges on startup.
