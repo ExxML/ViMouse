@@ -255,11 +255,8 @@ pub mod macos_grab {
                     let was_down = CAPS_LOCK_KEY_DOWN;
                     CAPS_LOCK_KEY_DOWN = !was_down;
                     !was_down
-                } else if is_known_modifier_code(code) {
-                    modifier_flag_active(code, CGEventGetFlags(raw_event))
                 } else {
-                    // Unknown code in FlagsChanged — not a real modifier event; ignore.
-                    return None;
+                    modifier_flag_active(code, CGEventGetFlags(raw_event))
                 };
 
                 if is_press {
@@ -293,10 +290,6 @@ pub mod macos_grab {
             _ => 0,
         };
         flags & modifier_flag != 0
-    }
-
-    fn is_known_modifier_code(code: u16) -> bool {
-        matches!(code, 54 | 55 | 56 | 58 | 59 | 60 | 61 | 62 | 63)
     }
 
     fn key_from_code(code: u16) -> Key {
@@ -590,8 +583,6 @@ struct PlatformEmitter {
     last_press_time: std::time::Instant,
     // Last known cursor position; updated on MouseMove so button events don't need to query it.
     last_cursor: core_graphics::geometry::CGPoint,
-    left_button_down: bool,
-    right_button_down: bool,
 }
 
 #[cfg(target_os = "macos")]
@@ -604,8 +595,6 @@ impl PlatformEmitter {
             last_press_left: None,
             last_press_time: std::time::Instant::now(),
             last_cursor: core_graphics::geometry::CGPoint { x: 0.0, y: 0.0 },
-            left_button_down: false,
-            right_button_down: false,
         }
     }
 
@@ -617,45 +606,34 @@ impl PlatformEmitter {
                 self.last_cursor = core_graphics::geometry::CGPoint { x: *x, y: *y };
                 // macOS requires LeftMouseDragged/RightMouseDragged when a button is held;
                 // plain MouseMoved is ignored by apps that use OS drag sessions (Finder, Chrome tabs).
-                let (cg_type, cg_button) = if self.left_button_down {
-                    (CGEventType::LeftMouseDragged, CGMouseButton::Left)
-                } else if self.right_button_down {
-                    (CGEventType::RightMouseDragged, CGMouseButton::Right)
-                } else {
-                    let event = CGEvent::new_mouse_event(
-                        self.source.clone(),
-                        CGEventType::MouseMoved,
-                        self.last_cursor,
-                        CGMouseButton::Left,
-                    )
-                    .map_err(|_| "CGEvent mouse move creation failed".to_string())?;
-                    event.post(CGEventTapLocation::HID);
-                    return Ok(());
-                };
+                let (cg_type, cg_button) =
+                    if mouse_button_is_down(rdev::Button::Left) {
+                        (CGEventType::LeftMouseDragged, CGMouseButton::Left)
+                    } else if mouse_button_is_down(rdev::Button::Right) {
+                        (CGEventType::RightMouseDragged, CGMouseButton::Right)
+                    } else {
+                        (CGEventType::MouseMoved, CGMouseButton::Left)
+                    };
                 let event = CGEvent::new_mouse_event(
                     self.source.clone(),
                     cg_type,
                     self.last_cursor,
                     cg_button,
                 )
-                .map_err(|_| "CGEvent mouse drag creation failed".to_string())?;
+                .map_err(|_| "CGEvent mouse move creation failed".to_string())?;
                 event.post(CGEventTapLocation::HID);
                 return Ok(());
             }
             Action::ButtonPress(rdev::Button::Left) => {
-                self.left_button_down = true;
                 (CGEventType::LeftMouseDown, CGMouseButton::Left)
             }
             Action::ButtonRelease(rdev::Button::Left) => {
-                self.left_button_down = false;
                 (CGEventType::LeftMouseUp, CGMouseButton::Left)
             }
             Action::ButtonPress(rdev::Button::Right) => {
-                self.right_button_down = true;
                 (CGEventType::RightMouseDown, CGMouseButton::Right)
             }
             Action::ButtonRelease(rdev::Button::Right) => {
-                self.right_button_down = false;
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
             Action::ButtonPress(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
@@ -694,6 +672,21 @@ impl PlatformEmitter {
         };
 
         if matches!(action, Action::ButtonPress(_)) {
+            // Sync last_cursor from the OS in case the physical mouse moved since the last
+            // synthetic MouseMove — otherwise button events fire at the stale position.
+            extern "C" {
+                fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+                fn CGEventGetLocation(event: *mut std::ffi::c_void) -> core_graphics::geometry::CGPoint;
+                fn CFRelease(cf: *mut std::ffi::c_void);
+            }
+            unsafe {
+                let ev = CGEventCreate(std::ptr::null());
+                if !ev.is_null() {
+                    self.last_cursor = CGEventGetLocation(ev);
+                    CFRelease(ev);
+                }
+            }
+
             let is_left = matches!(cg_button, CGMouseButton::Left);
             let same_button = self.last_press_left == Some(is_left);
             self.click_count = if same_button && self.last_press_time.elapsed() < MULTI_CLICK_WINDOW
