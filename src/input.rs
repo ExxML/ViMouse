@@ -444,7 +444,7 @@ fn queue_jump(state: &mut SharedState, key: Key) {
     };
 
     if let Some((cell_col, cell_row, pressed_at)) = state.pending_subcell.take() {
-        if pressed_at.elapsed() <= Duration::from_secs_f64(JUMP_GRID_DELAY) {
+        if pressed_at.elapsed().as_secs_f64() <= JUMP_GRID_DELAY {
             if let Some(target) = subcell_target(monitor, cell_col, cell_row, key) {
                 update_cursor(state, target);
                 state.pending_actions.push(Action::MouseMove(state.cursor));
