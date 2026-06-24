@@ -598,6 +598,24 @@ impl PlatformEmitter {
         }
     }
 
+    /// Refresh `last_cursor` from the OS's current cursor location. The physical mouse may
+    /// have moved since the last synthetic MouseMove, so button events must read the live
+    /// position rather than the stale cached one to avoid teleporting the cursor back.
+    fn sync_last_cursor_from_os(&mut self) {
+        extern "C" {
+            fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+            fn CGEventGetLocation(event: *mut std::ffi::c_void) -> core_graphics::geometry::CGPoint;
+            fn CFRelease(cf: *mut std::ffi::c_void);
+        }
+        unsafe {
+            let ev = CGEventCreate(std::ptr::null());
+            if !ev.is_null() {
+                self.last_cursor = CGEventGetLocation(ev);
+                CFRelease(ev);
+            }
+        }
+    }
+
     fn emit(&mut self, action: &Action) -> Result<(), String> {
         const MULTI_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
@@ -637,6 +655,7 @@ impl PlatformEmitter {
                 (CGEventType::RightMouseUp, CGMouseButton::Right)
             }
             Action::ButtonPress(b @ (rdev::Button::Middle | rdev::Button::Unknown(_))) => {
+                self.sync_last_cursor_from_os();
                 return emit_other_mouse_button(
                     &self.source,
                     CGEventType::OtherMouseDown,
@@ -672,20 +691,7 @@ impl PlatformEmitter {
         };
 
         if matches!(action, Action::ButtonPress(_)) {
-            // Sync last_cursor from the OS in case the physical mouse moved since the last
-            // synthetic MouseMove — otherwise button events fire at the stale position.
-            extern "C" {
-                fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
-                fn CGEventGetLocation(event: *mut std::ffi::c_void) -> core_graphics::geometry::CGPoint;
-                fn CFRelease(cf: *mut std::ffi::c_void);
-            }
-            unsafe {
-                let ev = CGEventCreate(std::ptr::null());
-                if !ev.is_null() {
-                    self.last_cursor = CGEventGetLocation(ev);
-                    CFRelease(ev);
-                }
-            }
+            self.sync_last_cursor_from_os();
 
             let is_left = matches!(cg_button, CGMouseButton::Left);
             let same_button = self.last_press_left == Some(is_left);
