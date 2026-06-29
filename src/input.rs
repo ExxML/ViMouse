@@ -1,6 +1,6 @@
 use crate::config::{
-    ACCEL_DELAY_SECS, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER,
-    JUMP_GRID, JUMP_GRID_DELAY, KEYS_QUIT, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
+    ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
+    FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
     KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT,
     KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID,
     KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
@@ -238,14 +238,14 @@ fn handle_key_press(
             Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
             Mode::Normal => {
                 #[allow(clippy::if_same_then_else)]
-                // KEY_FAST/KEY_SLOW only captured when scroll/move active.
+                // Only capture KEY_FAST/KEY_SLOW when scroll/move active.
                 if (key == KEY_FAST || key == KEY_SLOW)
                     && (tracker.held_keys.contains(&KEY_SCROLL)
                         || movement_active(&state.pressed_keys))
                 {
                     true
                 }
-                // Mouse keys capture even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
+                // Capture mouse keys even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
                 // so the OS modifier state is preserved on the resulting button/scroll event.
                 else if is_mouse_key(key) && !has_uncaptured_non_modifier_non_os(&tracker, key) {
                     true
@@ -829,11 +829,11 @@ fn clear_passthrough_key_event(tracker: &std::sync::Mutex<HookTracker>, key: Key
 }
 
 fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
-    KEYS_QUIT.contains(&current_key)
-        && KEYS_QUIT
+    CHORD_QUIT.contains(&current_key)
+        && CHORD_QUIT
             .iter()
             .all(|k| held_keys.contains(k) || *k == current_key)
-        && held_keys.iter().all(|k| KEYS_QUIT.contains(k))
+        && held_keys.iter().all(|k| CHORD_QUIT.contains(k))
 }
 
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
@@ -946,7 +946,7 @@ pub fn caps_lock_used_in_config() -> bool {
             KEY_MOVE_RIGHT,
         ]
         .contains(&Key::CapsLock)
-            || KEYS_QUIT.contains(&Key::CapsLock)
+            || CHORD_QUIT.contains(&Key::CapsLock)
             || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
     })
 }

@@ -91,4 +91,4 @@ pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 255; // Opacity of overlay letter o
 pub const OVERLAY_LETTER_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of overlay letter outlines (greyscale intensity 0-255)
 
 // Quit chord
-pub const KEYS_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];
+pub const CHORD_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];
