@@ -18,7 +18,7 @@ ViMouse has two modes, toggled like Vim:
 
 A small overlay badge in the bottom-left corner of your screen shows the current mode.
 
-While in Normal mode, only ViMouse keybinds are suppressed; all other keys pass through as usual.
+**Unless otherwise specified, the ViMouse keybinds below only work in Normal mode.**
 
 ---
 
@@ -93,11 +93,24 @@ Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and j
 
 > [!TIP]
 > It is recommended to use the jump grid as your primary method of navigation and only use the cursor movement keys (HJKL) for micro-adjustments.
-> If you wish to use the reference grid overlay or grid letters, there are many customization options available in `src/config.rs`. 
+> If you wish to use the reference grid overlay or grid letters, there are many customization options available in `src/config.rs`.
+
+---
+
+### Marks
+
+Marks are custom cursor positions you set and jump back to, like Vim marks. A label marks each position on the screen, showing which key jumps where.
+
+- Press a number key `0`-`9` to set a mark at the current cursor position.
+- Press that same key again to jump the cursor to the marked position.
+- Hold `Left Shift` and press a mark key to remove that mark.
+- Press `Left Shift` + `` ` `` to remove all marks.
 
 ---
 
 ### Other Controls
+
+These keybinds are available in both Normal and Insert modes.
 
 | Key | Action |
 |-----|--------|

@@ -1,10 +1,10 @@
 use crate::config::{
-    ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
-    FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE,
-    KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT,
-    KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID,
-    KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
-    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    ACCEL_DELAY_SECS, CHORD_QUIT, CHORD_UNMARK_ALL, CURSOR_ACCELERATION, CURSOR_BASE_SPEED,
+    CURSOR_MAX_SPEED, FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEYS_MARK, KEY_CYCLE_MONITOR,
+    KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5,
+    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL,
+    KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK,
+    SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -16,7 +16,7 @@ use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWake
 #[cfg(not(target_os = "macos"))]
 use rdev::grab;
 use rdev::{Button, Event, EventType, Key};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -238,8 +238,18 @@ fn handle_key_press(
             Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
             Mode::Normal => {
                 #[allow(clippy::if_same_then_else)]
+                // Mark keys are captured unconditionally (set / jump / unmark all decided later).
+                if is_mark_key(key) {
+                    true
+                }
+                // Unmark-all chord: capture the completing key (e.g. BackQuote) so the chord is
+                // suppressed. KEY_UNMARK itself is never captured here, so it stays consistent for
+                // the OS and scroll suppression is untouched.
+                else if unmark_all_chord_active(&tracker.held_keys, key) {
+                    true
+                }
                 // Only capture KEY_FAST/KEY_SLOW when scroll/move active.
-                if (key == KEY_FAST || key == KEY_SLOW)
+                else if (key == KEY_FAST || key == KEY_SLOW)
                     && (tracker.held_keys.contains(&KEY_SCROLL)
                         || movement_active(&state.pressed_keys))
                 {
@@ -303,7 +313,7 @@ fn handle_key_press(
                 if !is_jump_key(key) {
                     state.pending_subcell = None;
                 }
-                apply_normal_mode_press(&mut state, key);
+                apply_normal_mode_press(&mut state, key, &tracker.held_keys);
             }
         }
     }
@@ -372,7 +382,13 @@ fn handle_key_release(
     was_captured || was_suppressed
 }
 
-fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
+fn apply_normal_mode_press(state: &mut SharedState, key: Key, held_keys: &HashSet<Key>) {
+    // Unmark-all takes priority: the chord's completing key may itself be a mark key.
+    if unmark_all_chord_active(held_keys, key) {
+        state.marks.clear();
+        return;
+    }
+
     match key {
         KEY_INSERT_MODE => enter_insert_mode(state),
         KEY_NORMAL_MODE => {}
@@ -392,7 +408,24 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key) {
                 .or_insert_with(Instant::now);
         }
         _ if is_jump_key(key) => queue_jump(state, key),
+        _ if is_mark_key(key) => apply_mark_press(state, key, held_keys.contains(&KEY_UNMARK)),
         _ => {}
+    }
+}
+
+// A mark key was pressed in Normal mode. With KEY_UNMARK held, remove the mark (no-op if
+// absent). Otherwise jump to it if it exists, or set it at the current cursor if it doesn't.
+fn apply_mark_press(state: &mut SharedState, key: Key, unmark_held: bool) {
+    if unmark_held {
+        state.marks.remove(&key);
+        return;
+    }
+
+    if let Some(target) = state.marks.get(&key).copied() {
+        update_cursor(state, target);
+        state.pending_actions.push(Action::MouseMove(state.cursor));
+    } else {
+        state.marks.insert(key, state.cursor);
     }
 }
 
@@ -792,6 +825,11 @@ fn take_passthrough_key_event(
         }
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (tracker, key, is_press);
+    }
+
     false
 }
 
@@ -834,6 +872,15 @@ fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
             .iter()
             .all(|k| held_keys.contains(k) || *k == current_key)
         && held_keys.iter().all(|k| CHORD_QUIT.contains(k))
+}
+
+// True when `current_key` completes CHORD_UNMARK_ALL: every chord key is held (or is the
+// key just pressed). Order-independent, so either chord key can be the one that triggers it.
+fn unmark_all_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
+    CHORD_UNMARK_ALL.contains(&current_key)
+        && CHORD_UNMARK_ALL
+            .iter()
+            .all(|k| held_keys.contains(k) || *k == current_key)
 }
 
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
@@ -898,6 +945,12 @@ fn is_jump_key(key: Key) -> bool {
     set.contains(&key)
 }
 
+fn is_mark_key(key: Key) -> bool {
+    static MARK_KEYS: std::sync::OnceLock<HashSet<Key>> = std::sync::OnceLock::new();
+    let set = MARK_KEYS.get_or_init(|| KEYS_MARK.iter().copied().collect());
+    set.contains(&key)
+}
+
 fn is_runtime_modifier(key: Key) -> bool {
     key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
 }
@@ -911,6 +964,9 @@ struct UiStateSnapshot {
     show_grid_letters: bool,
     show_overlays: bool,
     selected_monitor: usize,
+    // Marks are few (≤ KEYS_MARK.len()), so cloning the map per key press is cheap and lets
+    // the event loop detect mark changes and repaint the mark overlay.
+    marks: HashMap<Key, Point>,
 }
 
 fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
@@ -920,6 +976,7 @@ fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
         show_grid_letters: state.show_grid_letters,
         show_overlays: state.show_overlays,
         selected_monitor: state.selected_monitor,
+        marks: state.marks.clone(),
     }
 }
 

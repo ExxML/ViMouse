@@ -8,8 +8,6 @@ use core_graphics::event::{
 #[cfg(target_os = "macos")]
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use rdev::Button;
-#[cfg(target_os = "linux")]
-use rdev::Button;
 use rdev::{simulate, EventType};
 #[cfg(target_os = "linux")]
 use std::os::raw::{c_int, c_uint, c_ulong};

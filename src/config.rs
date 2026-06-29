@@ -90,5 +90,21 @@ pub const OVERLAY_LETTER_OUTLINE_THICKNESS: usize = 1; // Thickness of overlay l
 pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 255; // Opacity of overlay letter outlines (0–255)
 pub const OVERLAY_LETTER_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of overlay letter outlines (greyscale intensity 0-255)
 
+// Mark keys (Normal mode only)
+pub const KEYS_MARK: &[Key] = &[
+    Key::Num1,
+    Key::Num2,
+    Key::Num3,
+    Key::Num4,
+    Key::Num5,
+    Key::Num6,
+    Key::Num7,
+    Key::Num8,
+    Key::Num9,
+    Key::Num0,
+];
+pub const KEY_UNMARK: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
+pub const CHORD_UNMARK_ALL: &[Key] = &[Key::ShiftLeft, Key::BackQuote];
+
 // Quit chord
 pub const CHORD_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];
