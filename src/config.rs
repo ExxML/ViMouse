@@ -26,6 +26,7 @@ pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after
 pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling when accelerating
 
 // Some keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
+// Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.
 
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI;
@@ -68,11 +69,11 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 // - 0.0 to disable subcell jumps
 // - f64::INFINITY to keep the subcell jump primed indefinitely
 pub const JUMP_GRID_DELAY: f64 = 1.0;
-// Toggle jump grid overlay (Normal mode only)
+// Toggle jump grid overlay
 pub const KEY_TOGGLE_GRID: Key = Key::Slash;
-// Toggle grid cell letter overlay (Normal mode only)
+// Toggle grid cell letter overlay
 pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Dot;
-// Toggle all overlays (icon, grid, and letters), available in all modes
+// Toggle all overlays (icon, grid, and letters) (available in both Normal and Insert mode)
 pub const KEY_TOGGLE_OVERLAY: Key = Key::ShiftRight;
 
 // Grid overlay line appearance
@@ -90,7 +91,7 @@ pub const OVERLAY_LETTER_OUTLINE_THICKNESS: usize = 1; // Thickness of overlay l
 pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 255; // Opacity of overlay letter outlines (0–255)
 pub const OVERLAY_LETTER_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of overlay letter outlines (greyscale intensity 0-255)
 
-// Mark keys (Normal mode only)
+// Mark keys
 pub const KEYS_MARK: &[Key] = &[
     Key::Num1,
     Key::Num2,
@@ -106,5 +107,5 @@ pub const KEYS_MARK: &[Key] = &[
 pub const KEY_UNMARK: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
 pub const CHORD_UNMARK_ALL: &[Key] = &[Key::ShiftLeft, Key::BackQuote];
 
-// Quit chord
+// Quit chord (available in both Normal and Insert mode)
 pub const CHORD_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];

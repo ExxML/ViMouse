@@ -16,9 +16,9 @@ ViMouse has two modes, toggled like Vim:
 | **Normal** | `CapsLock` | `N` | ViMouse intercepts keys (cursor control active) |
 | **Insert** | `i` | `I` | Keys pass through to apps normally |
 
-A small overlay badge in the bottom-left corner of your screen shows the current mode.
+A small icon in the bottom-left corner of your screen shows the current mode.
 
-**Unless otherwise specified, the ViMouse keybinds below only work in Normal mode.**
+**Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.**
 
 ---
 
@@ -41,12 +41,12 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 
 Tap a move key to move the cursor 100 px/sec. Hold to move 500 px/sec.
 
-All these values are modifiable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
+All values and configurations are modifiable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
 
 For example:
-- If you want to disable mouse acceleration, set `ACCELERATION` to 0.
-- If you want to use two-speed movement (current default), set `ACCELERATION` to `f64::INFINITY` and tweak `MAX_SPEED` to your preference.
-- If you want normal mouse acceleration, set `ACCELERATION` to a reasonable px/sec² value.
+- If you want to disable mouse acceleration, set `CURSOR_ACCELERATION` to 0.
+- If you want to use two-speed movement (current default), set `CURSOR_ACCELERATION` to `f64::INFINITY` and tweak `MAX_SPEED` to your preference.
+- If you want normal mouse acceleration, set `CURSOR_ACCELERATION` to a reasonable px/sec² value.
 
 > [!TIP]
 > Hold two movement keys simultaneously to move diagonally.
