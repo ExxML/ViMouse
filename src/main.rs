@@ -10,24 +10,24 @@ mod caps_lock_remap;
 #[cfg(not(target_os = "macos"))]
 mod caps_lock_suppress;
 mod config;
+mod grid_overlay;
+mod icon_overlay;
 mod input;
 mod monitor;
-mod overlay_grid;
-mod overlay_icon;
 mod platform_input;
 mod state;
 
 use crate::config::TICK_RATE_HZ;
+#[cfg(target_os = "windows")]
+use crate::grid_overlay::create_grid_owner_hwnd;
+use crate::grid_overlay::GridOverlayState;
+use crate::grid_overlay::{create_grid_window, GridSurface};
+use crate::icon_overlay::{
+    create_event_loop, create_window, paint_icon_overlay, reassert_topmost,
+    show_icon_overlay_window, IconOverlayState, IconSurface,
+};
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
-#[cfg(target_os = "windows")]
-use crate::overlay_grid::create_grid_owner_hwnd;
-use crate::overlay_grid::GridOverlayState;
-use crate::overlay_grid::{create_grid_window, GridSurface};
-use crate::overlay_icon::{
-    create_event_loop, create_window, paint_overlay_icon, reassert_topmost,
-    show_overlay_icon_window, IconSurface, OverlayIconState,
-};
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
 use crate::state::{Mode, MonitorInfo};
@@ -41,7 +41,7 @@ use winit::window::{Window, WindowId};
 
 struct UISnapshot {
     selected_monitor: usize,
-    overlay_icon: OverlayIconState,
+    icon_overlay: IconOverlayState,
     grid_state: GridOverlayState,
     letters_state: GridOverlayState,
     show_overlays: bool,
@@ -57,7 +57,7 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
     UISnapshot {
         selected_monitor: state.selected_monitor,
         show_overlays: state.show_overlays,
-        overlay_icon: OverlayIconState {
+        icon_overlay: IconOverlayState {
             mode: state.mode,
             monitor,
         },
@@ -74,7 +74,7 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
     }
 }
 
-struct OverlayIconSlot {
+struct IconOverlaySlot {
     window: Window,
     surface: IconSurface,
     monitor: MonitorInfo,
@@ -87,12 +87,12 @@ struct GridSlot {
     show_letters: bool,
 }
 
-fn create_overlay_icon_slots(
+fn create_icon_overlay_slots(
     event_loop: &EventLoop<()>,
     first_window: Window,
     monitors: &[MonitorInfo],
     mode: Mode,
-) -> Result<Vec<OverlayIconSlot>, String> {
+) -> Result<Vec<IconOverlaySlot>, String> {
     let mut windows = Vec::with_capacity(monitors.len());
     windows.push(first_window);
     for _ in 1..monitors.len() {
@@ -102,10 +102,10 @@ fn create_overlay_icon_slots(
     let mut slots = Vec::with_capacity(monitors.len());
     for (window, monitor) in windows.into_iter().zip(monitors.iter().copied()) {
         let mut surface = IconSurface::new(&window);
-        let overlay = OverlayIconState { mode, monitor };
-        paint_overlay_icon(&window, &mut surface, &overlay)?;
+        let overlay = IconOverlayState { mode, monitor };
+        paint_icon_overlay(&window, &mut surface, &overlay)?;
         window.set_visible(false);
-        slots.push(OverlayIconSlot {
+        slots.push(IconOverlaySlot {
             window,
             surface,
             monitor,
@@ -146,7 +146,7 @@ fn create_grid_slots(
     slots
 }
 
-fn find_overlay_icon_slot(slots: &[OverlayIconSlot], window_id: WindowId) -> Option<usize> {
+fn find_icon_overlay_slot(slots: &[IconOverlaySlot], window_id: WindowId) -> Option<usize> {
     slots.iter().position(|slot| slot.window.id() == window_id)
 }
 
@@ -154,21 +154,21 @@ fn find_grid_slot(slots: &[GridSlot], window_id: WindowId) -> Option<usize> {
     slots.iter().position(|slot| slot.window.id() == window_id)
 }
 
-fn paint_overlay_icon_slot_or_exit(
-    slot: &mut OverlayIconSlot,
+fn paint_icon_overlay_slot_or_exit(
+    slot: &mut IconOverlaySlot,
     mode: Mode,
     show: bool,
     control_flow: &mut ControlFlow,
 ) {
-    let overlay = OverlayIconState {
+    let overlay = IconOverlayState {
         mode,
         monitor: slot.monitor,
     };
-    match paint_overlay_icon(&slot.window, &mut slot.surface, &overlay) {
-        Ok(()) if show => show_overlay_icon_window(&slot.window),
+    match paint_icon_overlay(&slot.window, &mut slot.surface, &overlay) {
+        Ok(()) if show => show_icon_overlay_window(&slot.window),
         Ok(()) => slot.window.set_visible(false),
         Err(error) => {
-            eprintln!("overlay icon render error: {error}");
+            eprintln!("icon overlay render error: {error}");
             shutdown_platform_input();
             *control_flow = ControlFlow::Exit;
         }
@@ -271,7 +271,7 @@ fn main() {
     );
     spawn_motion_loop(Arc::clone(&shared), motion_waker, ui_waker);
 
-    let (mut last_overlay_icon, mut last_grid_state, mut last_letters_state, monitors) = {
+    let (mut last_icon_overlay, mut last_grid_state, mut last_letters_state, monitors) = {
         let state = shared.lock().expect("shared state poisoned");
         let monitor = state
             .monitors
@@ -279,7 +279,7 @@ fn main() {
             .copied()
             .expect("selected monitor out of bounds");
         (
-            OverlayIconState {
+            IconOverlayState {
                 mode: state.mode,
                 monitor,
             },
@@ -297,15 +297,15 @@ fn main() {
         )
     };
 
-    let mut overlay_icon_slots = match create_overlay_icon_slots(
+    let mut icon_overlay_slots = match create_icon_overlay_slots(
         &event_loop,
         bootstrap_window,
         &monitors,
-        last_overlay_icon.mode,
+        last_icon_overlay.mode,
     ) {
         Ok(slots) => slots,
         Err(error) => {
-            eprintln!("initial overlay icon render error: {error}");
+            eprintln!("initial icon overlay render error: {error}");
             shutdown_platform_input();
             return;
         }
@@ -338,7 +338,7 @@ fn main() {
         snap.selected_monitor
     };
     let mut last_show_overlays = true;
-    show_overlay_icon_window(&overlay_icon_slots[last_selected_monitor].window);
+    show_icon_overlay_window(&icon_overlay_slots[last_selected_monitor].window);
 
     // Time-based replacement for the old tick counter: reassert topmost ~66ms after grid hides.
     let mut topmost_reassert_at: Option<Instant> = None;
@@ -355,28 +355,28 @@ fn main() {
                 let selected_monitor = snap.selected_monitor;
 
                 let show_overlays = snap.show_overlays;
-                let overlay_icon = snap.overlay_icon;
-                let icon_changed = last_overlay_icon != overlay_icon;
+                let icon_overlay = snap.icon_overlay;
+                let icon_changed = last_icon_overlay != icon_overlay;
                 let overlays_changed = last_show_overlays != show_overlays;
                 if icon_changed || overlays_changed {
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
-                        overlay_icon_slots[last_selected_monitor]
+                        icon_overlay_slots[last_selected_monitor]
                             .window
                             .set_visible(false);
                     }
 
-                    last_overlay_icon = overlay_icon;
+                    last_icon_overlay = icon_overlay;
                     last_show_overlays = show_overlays;
                     if overlays_changed || monitor_changed {
-                        paint_overlay_icon_slot_or_exit(
-                            &mut overlay_icon_slots[selected_monitor],
-                            last_overlay_icon.mode,
+                        paint_icon_overlay_slot_or_exit(
+                            &mut icon_overlay_slots[selected_monitor],
+                            last_icon_overlay.mode,
                             show_overlays,
                             control_flow,
                         );
                     } else {
-                        overlay_icon_slots[selected_monitor].window.request_redraw();
+                        icon_overlay_slots[selected_monitor].window.request_redraw();
                     }
                 }
 
@@ -391,14 +391,14 @@ fn main() {
                     last_grid_state = grid_state;
                     update_grid_slot(&mut grid_slots[selected_monitor], last_grid_state.visible);
                     if !was_visible && last_grid_state.visible {
-                        reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                        reassert_topmost(&icon_overlay_slots[selected_monitor].window);
                     }
                     if was_visible && !last_grid_state.visible {
                         if icon_changed {
                             // Grid hid because mode changed. Reassert topmost immediately since
                             // the icon is being reshown this tick; a delayed reassert causes flicker.
                             topmost_reassert_at = None;
-                            reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                            reassert_topmost(&icon_overlay_slots[selected_monitor].window);
                         } else {
                             // Grid hid because the user toggled it off. Reassert topmost after
                             // a 1 tick delay to ensure the Windows taskbar has finished raising.
@@ -428,7 +428,7 @@ fn main() {
                     if was_visible && !last_letters_state.visible {
                         if icon_changed {
                             topmost_reassert_at = None;
-                            reassert_topmost(&overlay_icon_slots[selected_monitor].window);
+                            reassert_topmost(&icon_overlay_slots[selected_monitor].window);
                         } else {
                             topmost_reassert_at = Some(
                                 Instant::now()
@@ -442,16 +442,16 @@ fn main() {
 
                 if topmost_reassert_at.is_some_and(|d| Instant::now() >= d) {
                     topmost_reassert_at = None;
-                    reassert_topmost(&overlay_icon_slots[last_selected_monitor].window);
+                    reassert_topmost(&icon_overlay_slots[last_selected_monitor].window);
                 }
             }
             WinitEvent::WindowEvent { window_id, event } => match event {
                 WindowEvent::Resized(_) => {
-                    if let Some(index) = find_overlay_icon_slot(&overlay_icon_slots, window_id) {
+                    if let Some(index) = find_icon_overlay_slot(&icon_overlay_slots, window_id) {
                         let show = index == last_selected_monitor && last_show_overlays;
-                        paint_overlay_icon_slot_or_exit(
-                            &mut overlay_icon_slots[index],
-                            last_overlay_icon.mode,
+                        paint_icon_overlay_slot_or_exit(
+                            &mut icon_overlay_slots[index],
+                            last_icon_overlay.mode,
                             show,
                             control_flow,
                         );
@@ -472,11 +472,11 @@ fn main() {
                 _ => {}
             },
             WinitEvent::RedrawRequested(window_id) => {
-                if let Some(index) = find_overlay_icon_slot(&overlay_icon_slots, window_id) {
+                if let Some(index) = find_icon_overlay_slot(&icon_overlay_slots, window_id) {
                     let show = index == last_selected_monitor && last_show_overlays;
-                    paint_overlay_icon_slot_or_exit(
-                        &mut overlay_icon_slots[index],
-                        last_overlay_icon.mode,
+                    paint_icon_overlay_slot_or_exit(
+                        &mut icon_overlay_slots[index],
+                        last_icon_overlay.mode,
                         show,
                         control_flow,
                     );

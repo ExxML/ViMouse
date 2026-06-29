@@ -2,14 +2,14 @@ use rdev::Key;
 
 // Overlay configuration
 #[allow(dead_code)]
-pub enum OverlayIconPos {
+pub enum IconOverlayPos {
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
 }
-pub const OVERLAY_ICON_POSITION: OverlayIconPos = OverlayIconPos::BottomLeft;
-pub const OVERLAY_ICON_SIZE_MONITOR_FRACTION: f64 = 0.044;
+pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
+pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044;
 
 // Frequency of the motion loop that emits synthetic mouse/scroll events
 // Recommend setting this to match the refresh rate of your display
