@@ -1,6 +1,7 @@
 use crate::config::{
     GRID_ALPHA, GRID_BRIGHTNESS, GRID_THICKNESS, JUMP_GRID, OVERLAY_LETTER_ALPHA,
-    OVERLAY_LETTER_BRIGHTNESS, OVERLAY_LETTER_SIZE,
+    OVERLAY_LETTER_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_ALPHA, OVERLAY_LETTER_OUTLINE_BRIGHTNESS,
+    OVERLAY_LETTER_OUTLINE_THICKNESS, OVERLAY_LETTER_SIZE,
 };
 use crate::state::MonitorInfo;
 use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -577,6 +578,31 @@ fn key_label(key: Key) -> Option<char> {
     }
 }
 
+// True if the glyph pixel at scaled-block offset (gx, gy) is lit. Block is 8*s pixels square.
+fn glyph_px_lit(glyph: [u8; 8], s: isize, gx: isize, gy: isize) -> bool {
+    if gx < 0 || gy < 0 {
+        return false;
+    }
+    let (col, row) = (gx / s, gy / s);
+    row < 8 && col < 8 && (glyph[row as usize] >> col) & 1 == 1
+}
+
+// True if (gx, gy) is an outline pixel: not lit itself, but within OUTLINE_THICKNESS px of a lit pixel.
+fn glyph_px_outline(glyph: [u8; 8], s: isize, gx: isize, gy: isize) -> bool {
+    let t = OVERLAY_LETTER_OUTLINE_THICKNESS as isize;
+    if t == 0 || glyph_px_lit(glyph, s, gx, gy) {
+        return false;
+    }
+    for ny in gy - t..=gy + t {
+        for nx in gx - t..=gx + t {
+            if glyph_px_lit(glyph, s, nx, ny) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // Blit an 8×8 font glyph centered at (cx, cy) into a u32 BGRA premultiplied pixel buffer.
 // pixel format: little-endian u32 where bytes are B G R A.
 #[cfg(target_os = "windows")]
@@ -586,22 +612,27 @@ fn blit_label_bgra_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: us
     };
     let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
     let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((OVERLAY_LETTER_ALPHA as u32) << 24);
+    let opm =
+        (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
+    let outline: u32 =
+        opm | (opm << 8) | (opm << 16) | ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24);
     let s = OVERLAY_LETTER_SIZE.max(1);
-    let ox = cx.saturating_sub(4 * s);
-    let oy = cy.saturating_sub(4 * s);
-    for (row, bits) in glyph.iter().enumerate() {
-        for col in 0..8usize {
-            if (bits >> col) & 1 == 0 {
+    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let ox = cx.saturating_sub(4 * s + t);
+    let oy = cy.saturating_sub(4 * s + t);
+    for gy in 0..8 * s + 2 * t {
+        for gx in 0..8 * s + 2 * t {
+            let (bx, by) = (gx as isize - t as isize, gy as isize - t as isize);
+            let color = if glyph_px_lit(glyph, s as isize, bx, by) {
+                pixel
+            } else if glyph_px_outline(glyph, s as isize, bx, by) {
+                outline
+            } else {
                 continue;
-            }
-            for dy in 0..s {
-                for dx in 0..s {
-                    let px = ox + col * s + dx;
-                    let py = oy + row * s + dy;
-                    if px < w && py < h {
-                        pixels[py * w + px] = pixel;
-                    }
-                }
+            };
+            let (px, py) = (ox + gx, oy + gy);
+            if px < w && py < h {
+                pixels[py * w + px] = color;
             }
         }
     }
@@ -615,26 +646,29 @@ fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: usiz
         return;
     };
     let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32 / 255) as u8;
+    let opm = (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32 / 255)
+        as u8;
     let s = OVERLAY_LETTER_SIZE.max(1);
-    let ox = cx.saturating_sub(4 * s);
-    let oy = cy.saturating_sub(4 * s);
-    for (row, bits) in glyph.iter().enumerate() {
-        for col in 0..8usize {
-            if (bits >> col) & 1 == 0 {
+    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let ox = cx.saturating_sub(4 * s + t);
+    let oy = cy.saturating_sub(4 * s + t);
+    for gy in 0..8 * s + 2 * t {
+        for gx in 0..8 * s + 2 * t {
+            let (bx, by) = (gx.wrapping_sub(t), gy.wrapping_sub(t));
+            let (g, a) = if glyph_px_lit(glyph, s, bx, by) {
+                (pm, OVERLAY_LETTER_ALPHA)
+            } else if glyph_px_outline(glyph, s as isize, bx, by) {
+                (opm, OVERLAY_LETTER_OUTLINE_ALPHA)
+            } else {
                 continue;
-            }
-            for dy in 0..s {
-                for dx in 0..s {
-                    let px = ox + col * s + dx;
-                    let py = oy + row * s + dy;
-                    if px < w && py < h {
-                        let i = (py * w + px) * 4;
-                        pixels[i] = pm;
-                        pixels[i + 1] = pm;
-                        pixels[i + 2] = pm;
-                        pixels[i + 3] = OVERLAY_LETTER_ALPHA;
-                    }
-                }
+            };
+            let (px, py) = (ox + gx, oy + gy);
+            if px < w && py < h {
+                let i = (py * w + px) * 4;
+                pixels[i] = g;
+                pixels[i + 1] = g;
+                pixels[i + 2] = g;
+                pixels[i + 3] = a;
             }
         }
     }
@@ -649,22 +683,27 @@ fn blit_label_argb_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: us
     };
     let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
     let pixel: u32 = ((OVERLAY_LETTER_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    let opm =
+        (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
+    let outline: u32 =
+        ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24) | (opm << 16) | (opm << 8) | opm;
     let s = OVERLAY_LETTER_SIZE.max(1);
-    let ox = cx.saturating_sub(4 * s);
-    let oy = cy.saturating_sub(4 * s);
-    for (row, bits) in glyph.iter().enumerate() {
-        for col in 0..8usize {
-            if (bits >> col) & 1 == 0 {
+    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let ox = cx.saturating_sub(4 * s + t);
+    let oy = cy.saturating_sub(4 * s + t);
+    for gy in 0..8 * s + 2 * t {
+        for gx in 0..8 * s + 2 * t {
+            let (bx, by) = (gx as isize - t as isize, gy as isize - t as isize);
+            let color = if glyph_px_lit(glyph, s as isize, bx, by) {
+                pixel
+            } else if glyph_px_outline(glyph, s as isize, bx, by) {
+                outline
+            } else {
                 continue;
-            }
-            for dy in 0..s {
-                for dx in 0..s {
-                    let px = ox + col * s + dx;
-                    let py = oy + row * s + dy;
-                    if px < w && py < h {
-                        pixels[py * w + px] = pixel;
-                    }
-                }
+            };
+            let (px, py) = (ox + gx, oy + gy);
+            if px < w && py < h {
+                pixels[py * w + px] = color;
             }
         }
     }
