@@ -415,7 +415,7 @@ impl OverlaySurfaceImp {
 
             (xrender_api.XRenderComposite)(
                 display,
-                xrender::PictOpSrc as i32,
+                xrender::PictOpSrc,
                 src_pic,
                 0, // no mask
                 dst_pic,

@@ -42,6 +42,8 @@ struct HookTracker {
     held_keys: HashSet<Key>,
     captured_keys: HashSet<Key>,
     suppressed_modifiers: HashSet<Key>,
+    // Windows/macOS only: their low-level hooks re-observe our synthetic events; Linux's grab doesn't.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     passthrough_key_events: Vec<(Key, bool)>,
     pending_key_events: Vec<(Key, bool)>,
 }
