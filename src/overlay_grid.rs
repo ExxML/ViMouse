@@ -1,6 +1,6 @@
 use crate::config::{
-    GRID_ALPHA, GRID_BRIGHTNESS, GRID_LETTER_ALPHA, GRID_LETTER_BRIGHTNESS, GRID_LETTER_SIZE,
-    GRID_THICKNESS, JUMP_GRID,
+    GRID_ALPHA, GRID_BRIGHTNESS, GRID_THICKNESS, JUMP_GRID, OVERLAY_LETTER_ALPHA,
+    OVERLAY_LETTER_BRIGHTNESS, OVERLAY_LETTER_SIZE,
 };
 use crate::state::MonitorInfo;
 use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -584,9 +584,9 @@ fn blit_label_bgra_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: us
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32) / 255;
-    let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((GRID_LETTER_ALPHA as u32) << 24);
-    let s = GRID_LETTER_SIZE.max(1);
+    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
+    let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((OVERLAY_LETTER_ALPHA as u32) << 24);
+    let s = OVERLAY_LETTER_SIZE.max(1);
     let ox = cx.saturating_sub(4 * s);
     let oy = cy.saturating_sub(4 * s);
     for (row, bits) in glyph.iter().enumerate() {
@@ -614,8 +614,8 @@ fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: usiz
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32 / 255) as u8;
-    let s = GRID_LETTER_SIZE.max(1);
+    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32 / 255) as u8;
+    let s = OVERLAY_LETTER_SIZE.max(1);
     let ox = cx.saturating_sub(4 * s);
     let oy = cy.saturating_sub(4 * s);
     for (row, bits) in glyph.iter().enumerate() {
@@ -632,7 +632,7 @@ fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: usiz
                         pixels[i] = pm;
                         pixels[i + 1] = pm;
                         pixels[i + 2] = pm;
-                        pixels[i + 3] = GRID_LETTER_ALPHA;
+                        pixels[i + 3] = OVERLAY_LETTER_ALPHA;
                     }
                 }
             }
@@ -647,9 +647,9 @@ fn blit_label_argb_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy: us
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (GRID_LETTER_BRIGHTNESS as u32 * GRID_LETTER_ALPHA as u32) / 255;
-    let pixel: u32 = ((GRID_LETTER_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
-    let s = GRID_LETTER_SIZE.max(1);
+    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
+    let pixel: u32 = ((OVERLAY_LETTER_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    let s = OVERLAY_LETTER_SIZE.max(1);
     let ox = cx.saturating_sub(4 * s);
     let oy = cy.saturating_sub(4 * s);
     for (row, bits) in glyph.iter().enumerate() {

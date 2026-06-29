@@ -604,7 +604,8 @@ impl PlatformEmitter {
     fn sync_last_cursor_from_os(&mut self) {
         extern "C" {
             fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
-            fn CGEventGetLocation(event: *mut std::ffi::c_void) -> core_graphics::geometry::CGPoint;
+            fn CGEventGetLocation(event: *mut std::ffi::c_void)
+                -> core_graphics::geometry::CGPoint;
             fn CFRelease(cf: *mut std::ffi::c_void);
         }
         unsafe {
@@ -624,14 +625,13 @@ impl PlatformEmitter {
                 self.last_cursor = core_graphics::geometry::CGPoint { x: *x, y: *y };
                 // macOS requires LeftMouseDragged/RightMouseDragged when a button is held;
                 // plain MouseMoved is ignored by apps that use OS drag sessions (Finder, Chrome tabs).
-                let (cg_type, cg_button) =
-                    if mouse_button_is_down(rdev::Button::Left) {
-                        (CGEventType::LeftMouseDragged, CGMouseButton::Left)
-                    } else if mouse_button_is_down(rdev::Button::Right) {
-                        (CGEventType::RightMouseDragged, CGMouseButton::Right)
-                    } else {
-                        (CGEventType::MouseMoved, CGMouseButton::Left)
-                    };
+                let (cg_type, cg_button) = if mouse_button_is_down(rdev::Button::Left) {
+                    (CGEventType::LeftMouseDragged, CGMouseButton::Left)
+                } else if mouse_button_is_down(rdev::Button::Right) {
+                    (CGEventType::RightMouseDragged, CGMouseButton::Right)
+                } else {
+                    (CGEventType::MouseMoved, CGMouseButton::Left)
+                };
                 let event = CGEvent::new_mouse_event(
                     self.source.clone(),
                     cg_type,
