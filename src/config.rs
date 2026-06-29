@@ -25,12 +25,14 @@ pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold
 pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
 pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling when accelerating
 
-// Some keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
+// Most keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
+// Generally, the keybinds with the comment "Recommend using a modifier or non-text key" are not captured/suppressed
+
 // Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.
 
 // Mode switching
-pub const KEY_INSERT_MODE: Key = Key::KeyI;
-pub const KEY_NORMAL_MODE: Key = Key::CapsLock; // Recommend using a non-text key
+pub const KEY_INSERT_MODE: Key = Key::KeyI; // Only works in Normal mode
+pub const KEY_NORMAL_MODE: Key = Key::CapsLock; // Only works in Insert mode
 
 // Cursor movement keys
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;
