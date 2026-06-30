@@ -876,13 +876,12 @@ fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
         && held_keys.iter().all(|k| CHORD_QUIT.contains(k))
 }
 
-// True when `current_key` completes CHORD_UNMARK_ALL: every chord key is held (or is the
-// key just pressed). Order-independent, so either chord key can be the one that triggers it.
 fn unmark_all_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
     CHORD_UNMARK_ALL.contains(&current_key)
         && CHORD_UNMARK_ALL
             .iter()
             .all(|k| held_keys.contains(k) || *k == current_key)
+        && held_keys.iter().all(|k| CHORD_UNMARK_ALL.contains(k))
 }
 
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
