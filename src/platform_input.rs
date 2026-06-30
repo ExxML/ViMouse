@@ -45,15 +45,15 @@ pub fn simulate_input(event_type: &EventType) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn action_to_event_type(action: &Action, scroll_scale: f64) -> EventType {
+pub fn action_to_event_type(action: &Action) -> EventType {
     match action {
         Action::MouseMove(point) => EventType::MouseMove {
             x: point.x,
             y: point.y,
         },
         Action::Scroll { delta_x, delta_y } => EventType::Wheel {
-            delta_x: (delta_x * scroll_scale).round() as i64,
-            delta_y: (delta_y * scroll_scale).round() as i64,
+            delta_x: delta_x.round() as i64,
+            delta_y: delta_y.round() as i64,
         },
         Action::ButtonPress(button) => EventType::ButtonPress(*button),
         Action::ButtonRelease(button) => EventType::ButtonRelease(*button),
@@ -568,7 +568,7 @@ impl PlatformEmitter {
                 }
                 result
             },
-            _ => simulate_input(&action_to_event_type(action, 1.0)),
+            _ => simulate_input(&action_to_event_type(action)),
         }
     }
 }
@@ -855,7 +855,7 @@ impl PlatformEmitter {
             }
         }
 
-        simulate_input(&action_to_event_type(action, 1.0))
+        simulate_input(&action_to_event_type(action))
     }
 }
 

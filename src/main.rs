@@ -162,8 +162,7 @@ fn create_grid_slots(
 
     let mut slots = Vec::with_capacity(monitors.len());
     for (window, monitor) in windows.into_iter().zip(monitors.iter().copied()) {
-        let mut surface = GridSurface::new(&window, &monitor);
-        surface.prime(&window, &monitor);
+        let surface = GridSurface::new(&window, &monitor);
         slots.push(GridSlot {
             window,
             surface,

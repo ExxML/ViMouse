@@ -36,9 +36,6 @@ impl GridSurface {
         }
     }
 
-    // prime() is kept for API compatibility but is now a no-op (initialization is lazy).
-    pub fn prime(&mut self, _window: &Window, _monitor: &MonitorInfo) {}
-
     pub fn update(&mut self, window: &Window, state: &GridOverlayState) {
         let show_letters = state.show_letters;
         // Grid content only varies with the letters toggle (size is tracked by the surface).
