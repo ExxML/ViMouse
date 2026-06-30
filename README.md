@@ -36,7 +36,7 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 
 | Modifier | Effect |
 |----------|--------|
-| `Space` (hold) | 2× speed |
+| `Space` (hold) | 3× speed |
 | `Left Alt` (hold) | 0.3× speed |
 
 Tap a move key to move the cursor 100 px/sec. Hold to move 500 px/sec.
@@ -45,7 +45,7 @@ All values and configurations are modifiable in `src/config.rs`. Feel free to pl
 
 For example:
 - If you want to disable mouse acceleration, set `CURSOR_ACCELERATION` to 0.
-- If you want to use two-speed movement (current default), set `CURSOR_ACCELERATION` to `f64::INFINITY` and tweak `MAX_SPEED` to your preference.
+- If you want to use two-speed movement (current default), set `CURSOR_ACCELERATION` to `f64::INFINITY` and tweak `CURSOR_MAX_SPEED` to your preference.
 - If you want normal mouse acceleration, set `CURSOR_ACCELERATION` to a reasonable px/sec² value.
 
 > [!TIP]
@@ -69,6 +69,9 @@ There is no scroll acceleration by default, but this can be modified in `src/con
 |-----|--------|
 | `;` | Left click |
 | `'` | Right click |
+| `M` | Middle (scroll) click |
+| `O` | Back (X1) click |
+| `P` | Forward (X2) click |
 
 ---
 
