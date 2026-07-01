@@ -25,7 +25,6 @@ pub struct MarkGlyph {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarkOverlayState {
     pub visible: bool,
-    pub monitor: MonitorInfo,
     pub marks: Vec<MarkGlyph>,
 }
 
@@ -47,23 +46,22 @@ impl MarkSurface {
         }
     }
 
-    pub fn update(&mut self, window: &Window, state: &MarkOverlayState) {
+    pub fn update(&mut self, window: &Window, monitor: &MonitorInfo, state: &MarkOverlayState) {
         // Content depends on the mark glyphs and the monitor (which sets the coordinate
         // mapping and surface size). Bump the version when either changes.
-        if self.last_marks != state.marks || self.last_monitor != Some(state.monitor) {
+        if self.last_marks != state.marks || self.last_monitor != Some(*monitor) {
             self.last_marks = state.marks.clone();
-            self.last_monitor = Some(state.monitor);
+            self.last_monitor = Some(*monitor);
             self.version = self.version.wrapping_add(1);
         }
 
         let marks = &state.marks;
-        let monitor = state.monitor;
         self.surface.update(
             window,
-            &monitor,
+            monitor,
             state.visible,
             self.version,
-            |pixels, w, h| fill_marks(pixels, w, h, &monitor, marks),
+            |pixels, w, h| fill_marks(pixels, w, h, monitor, marks),
         );
     }
 }

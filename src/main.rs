@@ -90,7 +90,6 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
         },
         mark_state: MarkOverlayState {
             visible: state.show_overlays && state.mode == Mode::Normal,
-            monitor,
             marks: mark_glyphs(&state.marks),
         },
     }
@@ -243,12 +242,15 @@ fn update_grid_slot(slot: &mut GridSlot, visible: bool) {
     );
 }
 
+// Marks are global, so a slot shows whenever overlays are visible AND it owns a mark
+// (keeps mark-free monitors from flashing empty overlay windows).
 fn update_mark_slot(slot: &mut MarkSlot, visible: bool, marks: &[MarkGlyph]) {
+    let has_marks = marks.iter().any(|m| slot.monitor.contains(m.position));
     slot.surface.update(
         &slot.window,
+        &slot.monitor,
         &MarkOverlayState {
-            visible,
-            monitor: slot.monitor,
+            visible: visible && has_marks,
             marks: marks.to_vec(),
         },
     );
@@ -374,7 +376,6 @@ fn main() {
             },
             MarkOverlayState {
                 visible: state.mode == Mode::Normal,
-                monitor,
                 marks: mark_glyphs(&state.marks),
             },
             state.monitors.clone(),
@@ -488,16 +489,11 @@ fn main() {
 
                 let mark_state = snap.mark_state;
                 if last_mark_state != mark_state {
-                    if last_selected_monitor != selected_monitor && last_mark_state.visible {
-                        mark_slots[last_selected_monitor].window.set_visible(false);
-                    }
-
                     last_mark_state = mark_state;
-                    update_mark_slot(
-                        &mut mark_slots[selected_monitor],
-                        last_mark_state.visible,
-                        &last_mark_state.marks,
-                    );
+                    // Marks are global: repaint every slot, not just the focused one.
+                    for slot in mark_slots.iter_mut() {
+                        update_mark_slot(slot, last_mark_state.visible, &last_mark_state.marks);
+                    }
                 }
 
                 last_selected_monitor = selected_monitor;
@@ -521,13 +517,12 @@ fn main() {
                             update_grid_slot(&mut letters_slots[index], last_letters_state.visible);
                         }
                     } else if let Some(index) = find_mark_slot(&mark_slots, window_id) {
-                        if index == last_selected_monitor {
-                            update_mark_slot(
-                                &mut mark_slots[index],
-                                last_mark_state.visible,
-                                &last_mark_state.marks,
-                            );
-                        }
+                        // Marks are global: any mark slot may need repainting.
+                        update_mark_slot(
+                            &mut mark_slots[index],
+                            last_mark_state.visible,
+                            &last_mark_state.marks,
+                        );
                     }
                 }
                 WindowEvent::CloseRequested => {
