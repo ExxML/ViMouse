@@ -10,7 +10,8 @@ use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
 use crate::platform_input::{
-    shutdown_platform_input, simulate_input, InputEmitter, BUTTON_MOUSE_4, BUTTON_MOUSE_5,
+    scroll_direction_sign, shutdown_platform_input, simulate_input, InputEmitter, BUTTON_MOUSE_4,
+    BUTTON_MOUSE_5,
 };
 use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
 #[cfg(not(target_os = "macos"))]
@@ -648,8 +649,11 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
             SCROLL_ACCELERATION,
             SCROLL_MAX_SPEED,
         ) * speed_multiplier;
-        let delta_x = -direction.x * speed_x * delta_seconds;
-        let delta_y = -direction.y * speed_y * delta_seconds;
+        // Cancel the OS reverse/natural-scroll setting so a given key always scrolls the same
+        // physical direction on every platform (e.g. Shift+H always scrolls left).
+        let (sign_x, sign_y) = scroll_direction_sign();
+        let delta_x = -direction.x * speed_x * delta_seconds * sign_x;
+        let delta_y = -direction.y * speed_y * delta_seconds * sign_y;
         actions.push(Action::Scroll { delta_x, delta_y });
         return;
     }

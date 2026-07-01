@@ -133,6 +133,104 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
     }
 }
 
+/// Sign multipliers `(x, y)` applied to ViMouse's scroll deltas so scroll direction is unified
+/// across platforms and OS settings. The OS "reverse/natural scroll" setting flips how a wheel
+/// delta maps to on-screen motion; multiplying by these signs cancels that flip, so a given
+/// ViMouse key always scrolls the same physical direction. Read once and cached — the setting
+/// changes rarely and querying it every tick is wasteful.
+pub fn scroll_direction_sign() -> (f64, f64) {
+    use std::sync::OnceLock;
+    static SIGN: OnceLock<(f64, f64)> = OnceLock::new();
+    *SIGN.get_or_init(detect_scroll_direction_sign)
+}
+
+#[cfg(target_os = "windows")]
+fn detect_scroll_direction_sign() -> (f64, f64) {
+    // HKCU\Control Panel\Mouse\ReverseMouseWheelDirection: 1 = reverse scrolling on, 0 = off.
+    // We pin ViMouse to the "reverse on" outcome (which makes Shift+H scroll left, Shift+J down),
+    // so flip our delta only when the OS setting is OFF. Absent/unreadable => assume OFF, flip.
+    let reversed = read_reverse_wheel_registry().unwrap_or(false);
+    let sign = if reversed { 1.0 } else { -1.0 };
+    // Windows has no separate horizontal reverse setting; the same flag governs both axes.
+    (sign, sign)
+}
+
+#[cfg(target_os = "windows")]
+fn read_reverse_wheel_registry() -> Option<bool> {
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_CURRENT_USER, KEY_READ, REG_DWORD,
+    };
+    // UTF-16, NUL-terminated: "Control Panel\Mouse" and "ReverseMouseWheelDirection".
+    // The value is a REG_DWORD: 1 => reverse scrolling enabled, 0 => disabled.
+    let subkey: Vec<u16> = "Control Panel\\Mouse\0".encode_utf16().collect();
+    let value: Vec<u16> = "ReverseMouseWheelDirection\0".encode_utf16().collect();
+    unsafe {
+        let mut hkey = std::ptr::null_mut();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_READ, &mut hkey) != 0 {
+            return None;
+        }
+        let mut kind = 0u32;
+        let mut data = 0u32;
+        let mut len = std::mem::size_of::<u32>() as u32; // bytes
+        let status = RegQueryValueExW(
+            hkey,
+            value.as_ptr(),
+            std::ptr::null(),
+            &mut kind,
+            &mut data as *mut u32 as *mut u8,
+            &mut len,
+        );
+        RegCloseKey(hkey);
+        if status != 0 || kind != REG_DWORD {
+            return None;
+        }
+        Some(data != 0)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn detect_scroll_direction_sign() -> (f64, f64) {
+    // com.apple.swipescrolldirection = true (the default) means "natural" scrolling is on, which
+    // inverts wheel deltas relative to the classic direction. Cancel it so ViMouse is consistent.
+    let natural = read_natural_scroll_default().unwrap_or(true);
+    let sign = if natural { -1.0 } else { 1.0 };
+    (sign, sign)
+}
+
+#[cfg(target_os = "macos")]
+fn read_natural_scroll_default() -> Option<bool> {
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::string::CFString;
+    extern "C" {
+        fn CFPreferencesCopyAppValue(
+            key: *const std::ffi::c_void,
+            app_id: *const std::ffi::c_void,
+        ) -> *const std::ffi::c_void;
+    }
+    let key = CFString::new("com.apple.swipescrolldirection");
+    let app = CFString::new("Apple Global Domain");
+    unsafe {
+        let raw = CFPreferencesCopyAppValue(
+            key.as_concrete_TypeRef() as *const std::ffi::c_void,
+            app.as_concrete_TypeRef() as *const std::ffi::c_void,
+        );
+        if raw.is_null() {
+            return None;
+        }
+        let value = CFBoolean::wrap_under_create_rule(raw as *const _);
+        Some(value.into())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_scroll_direction_sign() -> (f64, f64) {
+    // Linux has no uniform, queryable "natural scroll" API (libinput settings live per-device in
+    // the compositor and are not exposed through a stable file/env). Assume classic direction;
+    // ViMouse emits the same wheel sign as a physical wheel, so it matches the user's setting.
+    (1.0, 1.0)
+}
+
 // macOS event suppression and simulation works differently than Windows or Linux
 // therefore, we use a custom event tap on macOS instead of rdev's built-in grab/simulate functionality
 // otherwise a "Trace/BPT trap: 5" error is thrown when emitting synthetic key events
