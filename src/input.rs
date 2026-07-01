@@ -297,42 +297,51 @@ fn handle_key_press(
         }
     };
 
-    if !should_capture {
-        return false;
-    }
+    let ui_changed = if should_capture {
+        tracker.captured_keys.insert(key);
 
-    tracker.captured_keys.insert(key);
+        // Snapshot UI-visible state before applying the key action so we can detect changes.
+        let ui_before = ui_snapshot(&state);
 
-    // Snapshot UI-visible state before applying the key action so we can detect changes.
-    let ui_before = ui_snapshot(&state);
-
-    if key == KEY_TOGGLE_OVERLAY {
-        state.show_overlays = !state.show_overlays;
-    } else {
-        match state.mode {
-            Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
-            Mode::Normal => {
-                if !is_jump_key(key) {
-                    state.pending_subcell = None;
+        if key == KEY_TOGGLE_OVERLAY {
+            state.show_overlays = !state.show_overlays;
+        } else {
+            match state.mode {
+                Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
+                Mode::Normal => {
+                    if !is_jump_key(key) {
+                        state.pending_subcell = None;
+                    }
+                    apply_normal_mode_press(&mut state, key, &tracker.held_keys);
                 }
-                apply_normal_mode_press(&mut state, key, &tracker.held_keys);
             }
         }
-    }
+
+        ui_snapshot(&state) != ui_before
+    } else {
+        false
+    };
+
+    // Run unconditionally: a runtime modifier (e.g. KEY_SCROLL) is never "captured", but while
+    // moving it must be hidden from the OS so it doesn't corrupt synthetic events (a held Shift
+    // turns a vertical wheel into a horizontal one). This may start suppressing `key` itself.
     sync_runtime_modifier_suppression(&state, &mut tracker);
 
-    // Wake the overlay event loop only when UI-visible state actually changed.
-    let ui_changed = ui_snapshot(&state) != ui_before;
+    // Drop the event from the OS stream if captured, OR if this press is the modifier we just
+    // started suppressing - otherwise the real key-down would reach the OS after sync's fake
+    // key-up and re-assert the modifier, making press order (move-then-scroll) misbehave.
+    let drop_from_os = should_capture || tracker.suppressed_modifiers.contains(&key);
 
     state.motion_needed = true;
     drop(state);
+    drop(tracker);
     waker.notify_one();
 
     if ui_changed {
         let _ = ui_waker.send_event(());
     }
 
-    true
+    drop_from_os
 }
 
 fn handle_key_release(
