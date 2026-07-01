@@ -133,11 +133,12 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
     }
 }
 
-/// Sign multipliers `(x, y)` applied to ViMouse's scroll deltas so scroll direction is unified
-/// across platforms and OS settings. The OS "reverse/natural scroll" setting flips how a wheel
-/// delta maps to on-screen motion; multiplying by these signs cancels that flip, so a given
-/// ViMouse key always scrolls the same physical direction. Read once and cached — the setting
-/// changes rarely and querying it every tick is wasteful.
+/// Sign multipliers `(x, y)` applied to ViMouse's scroll deltas so a given key always scrolls the
+/// same physical direction regardless of the OS scroll-direction setting. Only Windows needs this:
+/// its synthetic `MOUSEEVENTF_WHEEL` events are subject to the `ReverseMouseWheelDirection` flip,
+/// so we cancel it. macOS/Linux emit synthetic scrolls that bypass their reverse/natural-scroll
+/// setting and are already consistent (see `detect_scroll_direction_sign`). Read once and cached —
+/// the setting changes rarely and querying it every tick is wasteful.
 pub fn scroll_direction_sign() -> (f64, f64) {
     use std::sync::OnceLock;
     static SIGN: OnceLock<(f64, f64)> = OnceLock::new();
@@ -188,46 +189,15 @@ fn read_reverse_wheel_registry() -> Option<bool> {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "windows"))]
 fn detect_scroll_direction_sign() -> (f64, f64) {
-    // com.apple.swipescrolldirection = true (the default) means "natural" scrolling is on, which
-    // inverts wheel deltas relative to the classic direction. Cancel it so ViMouse is consistent.
-    let natural = read_natural_scroll_default().unwrap_or(true);
-    let sign = if natural { -1.0 } else { 1.0 };
-    (sign, sign)
-}
-
-#[cfg(target_os = "macos")]
-fn read_natural_scroll_default() -> Option<bool> {
-    use core_foundation::base::TCFType;
-    use core_foundation::boolean::CFBoolean;
-    use core_foundation::string::CFString;
-    extern "C" {
-        fn CFPreferencesCopyAppValue(
-            key: *const std::ffi::c_void,
-            app_id: *const std::ffi::c_void,
-        ) -> *const std::ffi::c_void;
-    }
-    let key = CFString::new("com.apple.swipescrolldirection");
-    let app = CFString::new("Apple Global Domain");
-    unsafe {
-        let raw = CFPreferencesCopyAppValue(
-            key.as_concrete_TypeRef() as *const std::ffi::c_void,
-            app.as_concrete_TypeRef() as *const std::ffi::c_void,
-        );
-        if raw.is_null() {
-            return None;
-        }
-        let value = CFBoolean::wrap_under_create_rule(raw as *const _);
-        Some(value.into())
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn detect_scroll_direction_sign() -> (f64, f64) {
-    // Linux has no uniform, queryable "natural scroll" API (libinput settings live per-device in
-    // the compositor and are not exposed through a stable file/env). Assume classic direction;
-    // ViMouse emits the same wheel sign as a physical wheel, so it matches the user's setting.
+    // No compensation on macOS or Linux — both emit synthetic scroll events that bypass the OS
+    // reverse/natural-scroll setting, so ViMouse's direction is already consistent:
+    //  - macOS: CGEvent scrolls posted at the HID tap location are not subject to the "natural
+    //    scrolling" inversion (applied to real hardware input higher up). There is no separate
+    //    mouse-vs-touchpad flag; it is one global setting (com.apple.swipescrolldirection).
+    //  - Linux: no uniform, queryable natural-scroll API (libinput settings live per-device in the
+    //    compositor). ViMouse emits the same wheel sign as a physical wheel, matching the setting.
     (1.0, 1.0)
 }
 
