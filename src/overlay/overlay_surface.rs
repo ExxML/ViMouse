@@ -22,8 +22,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
-    GWL_EXSTYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, ULW_ALPHA,
+    CreateWindowExW, GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, UpdateLayeredWindow, GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE, ULW_ALPHA,
     WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_POPUP,
 };
@@ -458,6 +459,89 @@ pub fn create_overlay_owner_hwnd() -> HWND {
             ptr::null_mut(),
         )
     }
+}
+
+// A fully transparent, click-through, always-on-top window spanning the primary monitor that stays
+// visible for the whole process. It permanently occupies the top of the "always on top" band so
+// the window manager keeps ViMouse's overlays (icon, grid, marks) above every other window,
+// including ones that aggressively raise themselves such as the Windows taskbar. Invisible to the
+// user, it counts as a visible topmost window to the window manager.
+//
+// Held by the caller for the process lifetime; dropping it destroys the anchor.
+pub struct TopmostAnchor {
+    // On Windows the anchor is a raw layered HWND (no event-loop integration needed). On other
+    // platforms it is a winit window kept permanently visible.
+    #[cfg(not(target_os = "windows"))]
+    _window: Window,
+}
+
+#[cfg(target_os = "windows")]
+pub fn create_topmost_anchor(_event_loop: &EventLoop<()>, _monitor: &MonitorInfo) -> TopmostAnchor {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+    unsafe {
+        // Span the full virtual desktop so the anchor overlaps the taskbar. Alpha 0 keeps it
+        // invisible and WS_EX_TRANSPARENT keeps it click-through.
+        let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let w = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
+        let h = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(1);
+        let hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            windows_sys::w!("Static"),
+            windows_sys::w!(""),
+            WS_POPUP,
+            x,
+            y,
+            w,
+            h,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+        if !hwnd.is_null() {
+            SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+            );
+        }
+        TopmostAnchor {}
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn create_topmost_anchor(event_loop: &EventLoop<()>, monitor: &MonitorInfo) -> TopmostAnchor {
+    // Built like a normal overlay window (transparent, always-on-top, click-through), then sized to
+    // the primary monitor and left permanently visible so it always occupies the topmost band.
+    let builder = WindowBuilder::new()
+        .with_title("ViMouse Anchor")
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_visible(false)
+        .with_active(false)
+        .with_transparent(true)
+        .with_window_level(WindowLevel::AlwaysOnTop)
+        .with_inner_size(PhysicalSize::new(1u32, 1u32));
+    let builder = configure_overlay_window_builder(builder);
+    let window = builder
+        .build(event_loop)
+        .expect("failed to create topmost anchor window");
+    configure_overlay_surface_window(&window);
+    let (w, h) = monitor_size_physical(monitor);
+    set_overlay_window_size(&window, monitor, w, h);
+    position_overlay_window(&window, monitor);
+    window.set_visible(true);
+    TopmostAnchor { _window: window }
 }
 
 #[cfg(target_os = "windows")]

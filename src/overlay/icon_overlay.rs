@@ -7,9 +7,9 @@ use std::ffi::c_void;
 use windows_sys::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
 };
 #[cfg(not(target_os = "macos"))]
 use winit::dpi::PhysicalPosition;
@@ -371,40 +371,3 @@ fn finalize_overlay_window(window: &Window) {
 
 #[cfg(not(target_os = "windows"))]
 fn finalize_overlay_window(_window: &Window) {}
-
-#[cfg(target_os = "windows")]
-pub fn reassert_topmost(window: &Window) {
-    unsafe {
-        let hwnd = window.hwnd() as HWND;
-        SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-        );
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn reassert_topmost(window: &Window) {
-    let Some(display) = window.xlib_display() else {
-        return;
-    };
-    let Some(xwindow) = window.xlib_window() else {
-        return;
-    };
-    let Ok(xlib) = xlib::Xlib::open() else {
-        return;
-    };
-    unsafe {
-        let display = display as *mut xlib::Display;
-        (xlib.XRaiseWindow)(display, xwindow);
-        (xlib.XFlush)(display);
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-pub fn reassert_topmost(_window: &Window) {}

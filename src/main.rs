@@ -16,15 +16,15 @@ mod overlay;
 mod platform_input;
 mod state;
 
-use crate::config::TICK_RATE_HZ;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 #[cfg(target_os = "windows")]
 use crate::overlay::create_overlay_owner_hwnd;
+use crate::overlay::create_topmost_anchor;
 use crate::overlay::{
     create_event_loop, create_overlay_window, create_window, key_label, paint_icon_overlay,
-    reassert_topmost, show_icon_overlay_window, GridOverlayState, GridSurface, IconOverlayState,
-    IconSurface, MarkGlyph, MarkOverlayState, MarkSurface,
+    show_icon_overlay_window, GridOverlayState, GridSurface, IconOverlayState, IconSurface,
+    MarkGlyph, MarkOverlayState, MarkSurface,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
@@ -32,7 +32,6 @@ use crate::state::{Mode, MonitorInfo};
 use fs2::FileExt;
 use rdev::Button;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Instant;
 use winit::event::{Event as WinitEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
@@ -311,11 +310,12 @@ fn main() {
     let bootstrap_mark_window = create_overlay_window(&event_loop);
 
     let monitors = collect_monitors(&bootstrap_window);
-    let initial_cursor = monitors
-        .first()
-        .copied()
-        .expect("no monitors available")
-        .center();
+    let primary_monitor = monitors.first().copied().expect("no monitors available");
+    let initial_cursor = primary_monitor.center();
+
+    // Keeps ViMouse's overlays above every other window for the whole session. Held here so it
+    // lives for the process lifetime; dropping it destroys the anchor (except on Windows)
+    let _topmost_anchor = create_topmost_anchor(&event_loop, &primary_monitor);
 
     let mut state = SharedState::new(initial_cursor, 0, monitors);
     if mouse_button_is_down(Button::Left) {
@@ -429,14 +429,8 @@ fn main() {
     let mut last_show_overlays = true;
     show_icon_overlay_window(&icon_slots[last_selected_monitor].window);
 
-    // Time-based replacement for the old tick counter: reassert topmost ~66ms after grid hides.
-    let mut topmost_reassert_at: Option<Instant> = None;
-
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = match topmost_reassert_at {
-            Some(deadline) => ControlFlow::WaitUntil(deadline),
-            None => ControlFlow::Wait,
-        };
+        *control_flow = ControlFlow::Wait;
 
         match event {
             WinitEvent::MainEventsCleared | WinitEvent::UserEvent(()) => {
@@ -469,38 +463,16 @@ fn main() {
 
                 let grid_state = snap.grid_state;
                 if last_grid_state != grid_state {
-                    let was_visible = last_grid_state.visible;
-
                     if last_selected_monitor != selected_monitor && last_grid_state.visible {
                         grid_slots[last_selected_monitor].window.set_visible(false);
                     }
 
                     last_grid_state = grid_state;
                     update_grid_slot(&mut grid_slots[selected_monitor], last_grid_state.visible);
-                    if !was_visible && last_grid_state.visible {
-                        reassert_topmost(&icon_slots[selected_monitor].window);
-                    }
-                    if was_visible && !last_grid_state.visible {
-                        if icon_changed {
-                            // Grid hid because mode changed. Reassert topmost immediately since
-                            // the icon is being reshown this tick; a delayed reassert causes flicker.
-                            topmost_reassert_at = None;
-                            reassert_topmost(&icon_slots[selected_monitor].window);
-                        } else {
-                            // Grid hid because the user toggled it off. Reassert topmost after
-                            // a 1 tick delay to ensure the Windows taskbar has finished raising.
-                            topmost_reassert_at = Some(
-                                Instant::now()
-                                    + std::time::Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64),
-                            );
-                        }
-                    }
                 }
 
                 let letters_state = snap.letters_state;
                 if last_letters_state != letters_state {
-                    let was_visible = last_letters_state.visible;
-
                     if last_selected_monitor != selected_monitor && last_letters_state.visible {
                         letters_slots[last_selected_monitor]
                             .window
@@ -512,23 +484,10 @@ fn main() {
                         &mut letters_slots[selected_monitor],
                         last_letters_state.visible,
                     );
-                    if was_visible && !last_letters_state.visible {
-                        if icon_changed {
-                            topmost_reassert_at = None;
-                            reassert_topmost(&icon_slots[selected_monitor].window);
-                        } else {
-                            topmost_reassert_at = Some(
-                                Instant::now()
-                                    + std::time::Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64),
-                            );
-                        }
-                    }
                 }
 
                 let mark_state = snap.mark_state;
                 if last_mark_state != mark_state {
-                    let was_visible = last_mark_state.visible;
-
                     if last_selected_monitor != selected_monitor && last_mark_state.visible {
                         mark_slots[last_selected_monitor].window.set_visible(false);
                     }
@@ -539,28 +498,9 @@ fn main() {
                         last_mark_state.visible,
                         &last_mark_state.marks,
                     );
-                    if !was_visible && last_mark_state.visible {
-                        reassert_topmost(&icon_slots[selected_monitor].window);
-                    }
-                    if was_visible && !last_mark_state.visible {
-                        if icon_changed {
-                            topmost_reassert_at = None;
-                            reassert_topmost(&icon_slots[selected_monitor].window);
-                        } else {
-                            topmost_reassert_at = Some(
-                                Instant::now()
-                                    + std::time::Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64),
-                            );
-                        }
-                    }
                 }
 
                 last_selected_monitor = selected_monitor;
-
-                if topmost_reassert_at.is_some_and(|d| Instant::now() >= d) {
-                    topmost_reassert_at = None;
-                    reassert_topmost(&icon_slots[last_selected_monitor].window);
-                }
             }
             WinitEvent::WindowEvent { window_id, event } => match event {
                 WindowEvent::Resized(_) => {

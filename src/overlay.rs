@@ -15,11 +15,12 @@ mod overlay_surface;
 
 pub use grid_overlay::{GridOverlayState, GridSurface};
 pub use icon_overlay::{
-    create_event_loop, create_window, paint_icon_overlay, reassert_topmost,
-    show_icon_overlay_window, IconOverlayState, IconSurface,
+    create_event_loop, create_window, paint_icon_overlay, show_icon_overlay_window,
+    IconOverlayState, IconSurface,
 };
 pub use mark_overlay::{MarkGlyph, MarkOverlayState, MarkSurface};
 pub use overlay_glyph::key_label;
 #[cfg(target_os = "windows")]
 pub use overlay_surface::create_overlay_owner_hwnd;
 pub use overlay_surface::create_overlay_window;
+pub use overlay_surface::create_topmost_anchor;
