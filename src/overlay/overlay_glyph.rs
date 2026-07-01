@@ -5,7 +5,8 @@
 
 use crate::config::{
     OVERLAY_LETTER_ALPHA, OVERLAY_LETTER_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_ALPHA,
-    OVERLAY_LETTER_OUTLINE_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_THICKNESS, OVERLAY_LETTER_SIZE,
+    OVERLAY_LETTER_OUTLINE_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_THICKNESS,
+    OVERLAY_LETTER_SIZE_MONITOR_FRACTION,
 };
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use rdev::Key;
@@ -53,6 +54,13 @@ pub fn key_label(key: Key) -> Option<char> {
     }
 }
 
+// Glyph scale multiplier for a surface of (w, h) physical pixels. The glyph is 8*s px tall,
+// so s tracks the smaller dimension of the surface's monitor — the monitor the letters live on.
+fn letter_scale(w: usize, h: usize) -> usize {
+    let target = w.min(h) as f64 * OVERLAY_LETTER_SIZE_MONITOR_FRACTION;
+    (target / 8.0).round().max(1.0) as usize
+}
+
 // True if the glyph pixel at scaled-block offset (gx, gy) is lit. Block is 8*s pixels square.
 pub fn glyph_px_lit(glyph: [u8; 8], s: isize, gx: isize, gy: isize) -> bool {
     if gx < 0 || gy < 0 {
@@ -91,7 +99,7 @@ pub fn blit_label_bgra_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy
         (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
     let outline: u32 =
         opm | (opm << 8) | (opm << 16) | ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24);
-    let s = OVERLAY_LETTER_SIZE.max(1);
+    let s = letter_scale(w, h);
     let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);
@@ -123,7 +131,7 @@ pub fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: 
     let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32 / 255) as u8;
     let opm = (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32 / 255)
         as u8;
-    let s = OVERLAY_LETTER_SIZE.max(1);
+    let s = letter_scale(w, h);
     let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);
@@ -162,7 +170,7 @@ pub fn blit_label_argb_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy
         (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
     let outline: u32 =
         ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24) | (opm << 16) | (opm << 8) | opm;
-    let s = OVERLAY_LETTER_SIZE.max(1);
+    let s = letter_scale(w, h);
     let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);

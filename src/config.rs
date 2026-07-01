@@ -9,7 +9,7 @@ pub enum IconOverlayPos {
     BottomRight,
 }
 pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
-pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044;
+pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length as a fraction of the monitor's smaller dimension
 
 // Frequency of the motion loop that emits synthetic mouse/scroll events
 // Recommend setting this to match the refresh rate of your display
@@ -86,11 +86,11 @@ pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greysca
 
 // Overlay letter appearance
 pub const DEFAULT_GRID_LETTER_ENABLED: bool = false; // Whether the grid letters are enabled by default
-pub const OVERLAY_LETTER_SIZE: usize = 2; // Scale multiplier for overlay letters (1 = 8px, 2 = 16px, 3 = 24px, …)
-pub const OVERLAY_LETTER_ALPHA: u8 = 255; // Opacity of overlay letters (0–255)
+pub const OVERLAY_LETTER_SIZE_MONITOR_FRACTION: f64 = 0.008; // Overlay letter height as a fraction of the monitor's smaller dimension
+pub const OVERLAY_LETTER_ALPHA: u8 = 192; // Opacity of overlay letters (0–255)
 pub const OVERLAY_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of overlay letters (greyscale intensity 0-255)
 pub const OVERLAY_LETTER_OUTLINE_THICKNESS: usize = 1; // Thickness of overlay letter outlines in pixels
-pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 255; // Opacity of overlay letter outlines (0–255)
+pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 192; // Opacity of overlay letter outlines (0–255)
 pub const OVERLAY_LETTER_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of overlay letter outlines (greyscale intensity 0-255)
 
 // Mark keys
