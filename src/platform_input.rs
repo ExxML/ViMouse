@@ -134,11 +134,7 @@ pub fn mouse_button_is_down(button: rdev::Button) -> bool {
 }
 
 /// Sign multipliers `(x, y)` applied to ViMouse's scroll deltas so a given key always scrolls the
-/// same physical direction regardless of the OS scroll-direction setting. Only Windows needs this:
-/// its synthetic `MOUSEEVENTF_WHEEL` events are subject to the `ReverseMouseWheelDirection` flip,
-/// so we cancel it. macOS/Linux emit synthetic scrolls that bypass their reverse/natural-scroll
-/// setting and are already consistent (see `detect_scroll_direction_sign`). Read once and cached —
-/// the setting changes rarely and querying it every tick is wasteful.
+/// same physical direction regardless of the OS scroll-direction setting. Cached on launch.
 pub fn scroll_direction_sign() -> (f64, f64) {
     use std::sync::OnceLock;
     static SIGN: OnceLock<(f64, f64)> = OnceLock::new();
@@ -147,13 +143,12 @@ pub fn scroll_direction_sign() -> (f64, f64) {
 
 #[cfg(target_os = "windows")]
 fn detect_scroll_direction_sign() -> (f64, f64) {
-    // HKCU\Control Panel\Mouse\ReverseMouseWheelDirection: 1 = reverse scrolling on, 0 = off.
-    // We pin ViMouse to the "reverse on" outcome (which makes Shift+H scroll left, Shift+J down),
-    // so flip our delta only when the OS setting is OFF. Absent/unreadable => assume OFF, flip.
+    // ReverseMouseWheelDirection inverts both synthetic wheels, so both axes track it (with
+    // opposite base polarity) to keep Shift+H left / Shift+J down in either setting.
     let reversed = read_reverse_wheel_registry().unwrap_or(false);
-    let sign = if reversed { 1.0 } else { -1.0 };
-    // Windows has no separate horizontal reverse setting; the same flag governs both axes.
-    (sign, sign)
+    let sign_x = if reversed { 1.0 } else { -1.0 };
+    let sign_y = if reversed { -1.0 } else { 1.0 };
+    (sign_x, sign_y)
 }
 
 #[cfg(target_os = "windows")]
@@ -161,8 +156,7 @@ fn read_reverse_wheel_registry() -> Option<bool> {
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_CURRENT_USER, KEY_READ, REG_DWORD,
     };
-    // UTF-16, NUL-terminated: "Control Panel\Mouse" and "ReverseMouseWheelDirection".
-    // The value is a REG_DWORD: 1 => reverse scrolling enabled, 0 => disabled.
+    // HKCU\Control Panel\Mouse\ReverseMouseWheelDirection, a REG_DWORD: 1 => reverse on, 0 => off.
     let subkey: Vec<u16> = "Control Panel\\Mouse\0".encode_utf16().collect();
     let value: Vec<u16> = "ReverseMouseWheelDirection\0".encode_utf16().collect();
     unsafe {
@@ -191,13 +185,8 @@ fn read_reverse_wheel_registry() -> Option<bool> {
 
 #[cfg(not(target_os = "windows"))]
 fn detect_scroll_direction_sign() -> (f64, f64) {
-    // No compensation on macOS or Linux — both emit synthetic scroll events that bypass the OS
-    // reverse/natural-scroll setting, so ViMouse's direction is already consistent:
-    //  - macOS: CGEvent scrolls posted at the HID tap location are not subject to the "natural
-    //    scrolling" inversion (applied to real hardware input higher up). There is no separate
-    //    mouse-vs-touchpad flag; it is one global setting (com.apple.swipescrolldirection).
-    //  - Linux: no uniform, queryable natural-scroll API (libinput settings live per-device in the
-    //    compositor). ViMouse emits the same wheel sign as a physical wheel, matching the setting.
+    // No compensation on macOS or Linux: their synthetic scroll events bypass the OS
+    // reverse/natural-scroll setting, so ViMouse's direction is already consistent.
     (1.0, 1.0)
 }
 

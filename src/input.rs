@@ -649,8 +649,8 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
             SCROLL_ACCELERATION,
             SCROLL_MAX_SPEED,
         ) * speed_multiplier;
-        // ±1 signs that cancel the OS scroll-direction setting, so Shift+H always scrolls left,
-        // Shift+J always down, etc. (See scroll_direction_sign; only Windows ever flips.)
+        // ±1 signs that cancel the OS scroll-direction setting so move keys always scroll the same
+        // physical direction (see scroll_direction_sign; only Windows ever flips).
         let (sign_x, sign_y) = scroll_direction_sign();
         let delta_x = -direction.x * speed_x * delta_seconds * sign_x;
         let delta_y = -direction.y * speed_y * delta_seconds * sign_y;
