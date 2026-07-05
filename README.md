@@ -127,7 +127,7 @@ These keybinds are available in both Normal and Insert modes.
 
 ### Prerequisites
 
-- [Rust toolchain](https://rustup.rs) (stable)
+- Install [Rust toolchain](https://rustup.rs) (stable)
 
 ### macOS
 
@@ -139,7 +139,8 @@ cargo bundle --release
 ```
 Bundling is preferred over running a plain Unix executable because a terminal window opens on launch by default. If you would rather, `cargo build --release` works fine as well.
 
-This program can be ran from `target/release/bundle/osx/ViMouse.app`.
+After bundling/building, ViMouse can be ran from `target/release/bundle/osx/ViMouse.app`.
+
 - ViMouse requires Accessibility permission to intercept input. On first launch, ViMouse will prompt you to grant it under **System Settings → Privacy & Security → Accessibility**.
 
 ### Windows / Linux
@@ -148,13 +149,13 @@ This program can be ran from `target/release/bundle/osx/ViMouse.app`.
 cargo build --release
 ```
 
-This program can be ran from `target/release/vimouse.exe`.
+After building, ViMouse can be ran from `target/release/vimouse.exe`.
 
 > [!IMPORTANT]
 > Known Limitations on Windows:
-> - Unless ViMouse is launched with administrator privileges, it cannot interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
->   - You can use Task Scheduler to run the .exe with elevated privileges on startup.
-> - Windows has a known issue that the mouse cursor disappears after waking up from sleep. Only physically moving the mouse or touching the trackpad will make the cursor appear again. This can be solved programmatically but is likely more bloat than it's worth.
+> - ViMouse must be launched with administrator privileges to interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
+>   - You can use Task Scheduler to run vimouse.exe with elevated privileges on PC startup.
+> - Windows has a known bug where the mouse cursor disappears after waking up from sleep. The cursor will only reappear when the mouse is physically moved; ViMouse cannot wake the cursor (but can still control it). This bug can be programmatically circumvented but is more bloat than it's worth.
 
 ## License
 
