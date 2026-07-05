@@ -4,6 +4,12 @@ Effectively control your cursor with only a keyboard.
 
 Supports macOS, Windows, and Linux.
 
+## Demo
+
+https://github.com/user-attachments/assets/9f66ab8f-f457-4b9f-b1b3-5b6602156a6b
+
+- Note: The green circle around the mouse cursor was edited in to highlight the position of the cursor; it is not part of the overlay.
+
 ## Usage
 
 > [!NOTE]
