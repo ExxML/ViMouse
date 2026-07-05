@@ -137,12 +137,13 @@ These keybinds are available in both Normal and Insert modes.
 
 ### macOS
 
-Uses [`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) to produce a native app bundle:
+Use [`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) to produce a native app bundle:
 
 ```bash
 cargo install cargo-bundle
 cargo bundle --release
 ```
+
 Bundling is preferred over running a plain Unix executable because a terminal window opens on launch by default. If you would rather, `cargo build --release` works fine as well.
 
 After bundling/building, ViMouse can be ran from `target/release/bundle/osx/ViMouse.app`.
