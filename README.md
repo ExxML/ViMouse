@@ -4,6 +4,28 @@ Effectively control your cursor with only a keyboard.
 
 Supports macOS, Windows, and Linux.
 
+<details>
+<summary>Table of Contents</summary>
+
+- [Demo](#demo)
+- [Usage](#usage)
+  - [Cursor Movement](#cursor-movement)
+  - [Scrolling](#scrolling)
+  - [Clicking](#clicking)
+  - [Jump Grid](#jump-grid)
+  - [Marks](#marks)
+  - [Other Controls](#other-controls)
+- [Installation](#installation)
+  - [Option 1: Download a Prebuilt Binary (fastest)](#option-1-download-a-prebuilt-binary-fastest)
+  - [Option 2: Build From Source](#option-2-build-from-source)
+    - [Prerequisites](#prerequisites)
+    - [macOS](#macos)
+    - [Windows / Linux](#windows--linux)
+  - [Platform Notes](#platform-notes)
+- [License](#license)
+
+</details>
+
 ## Demo
 
 https://github.com/user-attachments/assets/9f66ab8f-f457-4b9f-b1b3-5b6602156a6b
@@ -128,14 +150,23 @@ These keybinds are available in both Normal and Insert modes.
 
 ## Installation
 
-> [!IMPORTANT]
+> [!NOTE]
 > Some (less advanced) keyboards may exhibit ghosting behaviour- they use a simple row/column matrix without diodes on each key switch. This means that certain three-key combinations may fail to register, causing some ViMouse keybindings to not work. This is a hardware limitation and there is unfortunately no possible software fix for this.
 
-### Prerequisites
+### Option 1: Download a Prebuilt Binary (fastest)
 
-- Install [Rust toolchain](https://rustup.rs) (stable)
+1. Download the binary for your OS and architecture from [Releases](https://github.com/ExxML/ViMouse/releases/latest).
+2. Extract and run the executable (`ViMouse.app` on macOS, `vimouse.exe` on Windows, `vimouse` on Linux).
 
-### macOS
+See [Platform Notes](#platform-notes) for permissions and known limitations.
+
+### Option 2: Build From Source
+
+#### Prerequisites
+
+Install [Rust toolchain](https://rustup.rs) (stable).
+
+#### macOS
 
 Use [`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) to produce a native app bundle:
 
@@ -144,25 +175,27 @@ cargo install cargo-bundle
 cargo bundle --release
 ```
 
-Bundling is preferred over running a plain Unix executable because a terminal window opens on launch by default. If you would rather, `cargo build --release` works fine as well.
+Run from `target/release/bundle/osx/ViMouse.app`.
 
-After bundling/building, ViMouse can be ran from `target/release/bundle/osx/ViMouse.app`.
+Bundling is preferred over a plain Unix executable because the latter opens a terminal window on launch. If you prefer, `cargo build --release` works as well.
 
-- ViMouse requires Accessibility permission to intercept input. On first launch, ViMouse will prompt you to grant it under **System Settings → Privacy & Security → Accessibility**.
-
-### Windows / Linux
+#### Windows / Linux
 
 ```bash
 cargo build --release
 ```
 
-After building, ViMouse can be ran from `target/release/vimouse.exe`.
+Run from `target/release/vimouse.exe` (Windows) or `target/release/vimouse` (Linux).
 
-> [!IMPORTANT]
-> Known Limitations on Windows:
-> - ViMouse must be launched with administrator privileges to interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
->   - You can use Task Scheduler to run vimouse.exe with elevated privileges on PC startup.
-> - Windows has a known bug where the mouse cursor disappears after waking up from sleep. The cursor will only reappear when the mouse is physically moved; ViMouse cannot wake the cursor (but can still control it). This bug can be programmatically circumvented but is more bloat than it's worth.
+### Platform Notes
+
+**macOS**
+- ViMouse requires Accessibility permission to intercept input. On first launch, it will prompt you to grant it under *System Settings → Privacy & Security → Accessibility*.
+
+**Windows**
+- ViMouse must be launched with administrator privileges to interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
+  - You can use Task Scheduler to run vimouse.exe with elevated privileges on PC startup.
+- Windows has a known bug where the mouse cursor disappears after waking up from sleep. The cursor will only reappear when the mouse is physically moved; ViMouse cannot wake the cursor (but can still control it). This bug can be programmatically circumvented but is more bloat than it's worth.
 
 ## License
 
