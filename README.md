@@ -16,7 +16,7 @@ Supports macOS, Windows, and Linux.
   - [Marks](#marks)
   - [Other Controls](#other-controls)
 - [Installation](#installation)
-  - [Option 1: Download a Prebuilt Binary (fastest)](#option-1-download-a-prebuilt-binary-fastest)
+  - [Option 1: Download a Release (fastest)](#option-1-download-a-release-fastest)
   - [Option 2: Build From Source](#option-2-build-from-source)
     - [Prerequisites](#prerequisites)
     - [macOS](#macos)
@@ -153,9 +153,9 @@ These keybinds are available in both Normal and Insert modes.
 > [!NOTE]
 > Some (less advanced) keyboards may exhibit ghosting behaviour- they use a simple row/column matrix without diodes on each key switch. This means that certain three-key combinations may fail to register, causing some ViMouse keybindings to not work. This is a hardware limitation and there is unfortunately no possible software fix for this.
 
-### Option 1: Download a Prebuilt Binary (fastest)
+### Option 1: Download a Release (fastest)
 
-1. Download the binary for your OS and architecture from [Releases](https://github.com/ExxML/ViMouse/releases/latest).
+1. Download the compressed binary for your OS and architecture from [Releases](https://github.com/ExxML/ViMouse/releases/latest).
 2. Extract and run the executable (`ViMouse.app` on macOS, `vimouse.exe` on Windows, `vimouse` on Linux).
 
 See [Platform Notes](#platform-notes) for permissions and known limitations.
