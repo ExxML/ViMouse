@@ -76,7 +76,8 @@ jobs:
             libxcursor-dev \
             libxi-dev \
             libxrandr-dev \
-            libxkbcommon-dev
+            libxkbcommon-dev \
+            libxtst-dev
 
       - name: Build release binary
         run: cargo build --release --locked --target ${{ matrix.target }}
