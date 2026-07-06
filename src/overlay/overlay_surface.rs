@@ -98,7 +98,7 @@ impl OverlaySurface {
             .as_mut()
             .unwrap()
             .paint(window, w, h, version, fill);
-        window.set_visible(true);
+        show_overlay_window(window);
     }
 }
 
@@ -260,13 +260,14 @@ impl OverlaySurfaceImp {
         use core_graphics::color_space::CGColorSpace;
         use core_graphics::context::CGContext;
 
-        if !self.cache_valid || self.texture_size != (w, h) || self.cached_version != version {
-            self.pixel_cache = vec![0u8; (w * h * 4) as usize];
-            fill(&mut self.pixel_cache, w as usize, h as usize);
-            self.texture_size = (w, h);
-            self.cached_version = version;
-            self.cache_valid = true;
+        if self.cache_valid && self.texture_size == (w, h) && self.cached_version == version {
+            return;
         }
+        self.pixel_cache = vec![0u8; (w * h * 4) as usize];
+        fill(&mut self.pixel_cache, w as usize, h as usize);
+        self.texture_size = (w, h);
+        self.cached_version = version;
+        self.cache_valid = true;
 
         let color_space = CGColorSpace::create_device_rgb();
         // CGBitmapContext requires a mutable data pointer; we own pixel_cache so this is safe.
@@ -283,17 +284,20 @@ impl OverlaySurfaceImp {
             .create_image()
             .expect("CGBitmapContextCreateImage failed");
 
-        // Set the CGImage as the contents of the window's root CALayer.
         unsafe {
             use foreign_types_shared::ForeignType;
-            use objc::runtime::Object;
+            use objc::runtime::{Class, Object};
             let ns_view = window.ns_view() as *mut Object;
             let layer: *mut Object = msg_send![ns_view, layer];
             if layer.is_null() {
                 return;
             }
             let cg_image = image.as_ptr();
+            let transaction_class = Class::get("CATransaction").unwrap();
+            let _: () = msg_send![transaction_class, begin];
+            let _: () = msg_send![transaction_class, setDisableActions: true];
             let () = msg_send![layer, setContents: cg_image];
+            let _: () = msg_send![transaction_class, commit];
         }
     }
 }
@@ -691,6 +695,23 @@ fn platform_configure_overlay_window(window: &Window) {
         // kCGDockWindowLevel is 20; use 21 so the overlay sits just above the dock but below the icon (102).
         let _: () = msg_send![ns_window, setLevel: 21i64];
     }
+}
+
+// winit's set_visible(true) calls makeKeyAndOrderFront:, which also hands this
+// non-activating, click-through overlay keyboard focus it doesn't want. orderFront:
+// skips that.
+#[cfg(target_os = "macos")]
+fn show_overlay_window(window: &Window) {
+    unsafe {
+        use objc::runtime::Object;
+        let ns_window = window.ns_window() as *mut Object;
+        let _: () = msg_send![ns_window, orderFront: std::ptr::null_mut::<Object>()];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_overlay_window(window: &Window) {
+    window.set_visible(true);
 }
 
 // ── size / position helpers ───────────────────────────────────────────────────
