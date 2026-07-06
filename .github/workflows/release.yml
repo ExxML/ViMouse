@@ -112,7 +112,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          staging="${BIN_NAME}-${{ matrix.target }}"
+          staging="${BIN_NAME}-${{ matrix.platform }}-${{ matrix.arch }}"
           app="${APP_NAME}.app"
 
           # Standard macOS app bundle layout.
