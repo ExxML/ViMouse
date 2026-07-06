@@ -190,6 +190,9 @@ Run from `target/release/vimouse.exe` (Windows) or `target/release/vimouse` (Lin
 ### Platform Notes
 
 **macOS**
+- Release builds are ad-hoc signed but **not** notarized (no Apple Developer ID). On first launch macOS will block the app with an *"unidentified developer"* / *"cannot verify … free of malware"* prompt. To open it, either:
+  - Right-click `ViMouse.app` → **Open**, then confirm (on macOS Sequoia and later, go to *System Settings → Privacy & Security* and click **Open Anyway**), or
+  - Clear the quarantine attribute from Terminal: `xattr -dr com.apple.quarantine /path/to/ViMouse.app`
 - ViMouse requires Accessibility permission to intercept input. On first launch, it will prompt you to grant it under *System Settings → Privacy & Security → Accessibility*.
 
 **Windows**

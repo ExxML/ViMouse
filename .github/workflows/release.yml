@@ -159,6 +159,13 @@ jobs:
           sed 's/^[[:space:]]*//' "${app}/Contents/Info.plist.tmp" > "${app}/Contents/Info.plist"
           rm "${app}/Contents/Info.plist.tmp"
 
+          # Ad-hoc sign the fully-assembled bundle so a quarantined download isn't
+          # blocked as "damaged". Sign inside-out; not notarized, so users still 
+          # clear quarantine on first launch (see README Platform Notes).
+          codesign --force --sign - "${app}/Contents/MacOS/${APP_NAME}"
+          codesign --force --sign - "${app}"
+          codesign --verify --deep --strict --verbose=2 "${app}"
+
           mkdir -p "$staging"
           mv "${app}" "$staging/"
           cp README.md LICENSE "$staging/" 2>/dev/null || true
