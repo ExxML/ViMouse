@@ -699,8 +699,9 @@ impl PlatformEmitter {
                 // without allocating/posting a CGEvent through the WindowServer.
                 let Some((cg_type, cg_button)) = cg_type_button else {
                     extern "C" {
-                        fn CGWarpMouseCursorPosition(point: core_graphics::geometry::CGPoint)
-                            -> i32;
+                        fn CGWarpMouseCursorPosition(
+                            point: core_graphics::geometry::CGPoint,
+                        ) -> i32;
                     }
                     unsafe {
                         CGWarpMouseCursorPosition(self.last_cursor);
