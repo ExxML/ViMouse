@@ -643,6 +643,14 @@ struct PlatformEmitter {
 #[cfg(target_os = "macos")]
 impl PlatformEmitter {
     fn new() -> Self {
+        extern "C" {
+            fn CGSetLocalEventsSuppressionInterval(seconds: f64);
+        }
+        unsafe {
+            // CGWarpMouseCursorPosition (used below for plain moves) otherwise suppresses the
+            // OS's real mouse-move event stream for ~0.25s after each call.
+            CGSetLocalEventsSuppressionInterval(0.0);
+        }
         Self {
             source: CGEventSource::new(CGEventSourceStateID::HIDSystemState)
                 .expect("CGEventSource creation failed"),
@@ -680,12 +688,24 @@ impl PlatformEmitter {
                 self.last_cursor = core_graphics::geometry::CGPoint { x: *x, y: *y };
                 // macOS requires LeftMouseDragged/RightMouseDragged when a button is held;
                 // plain MouseMoved is ignored by apps that use OS drag sessions (Finder, Chrome tabs).
-                let (cg_type, cg_button) = if mouse_button_is_down(rdev::Button::Left) {
-                    (CGEventType::LeftMouseDragged, CGMouseButton::Left)
+                let cg_type_button = if mouse_button_is_down(rdev::Button::Left) {
+                    Some((CGEventType::LeftMouseDragged, CGMouseButton::Left))
                 } else if mouse_button_is_down(rdev::Button::Right) {
-                    (CGEventType::RightMouseDragged, CGMouseButton::Right)
+                    Some((CGEventType::RightMouseDragged, CGMouseButton::Right))
                 } else {
-                    (CGEventType::MouseMoved, CGMouseButton::Left)
+                    None
+                };
+                // No button held: CGWarpMouseCursorPosition repositions the cursor directly,
+                // without allocating/posting a CGEvent through the WindowServer.
+                let Some((cg_type, cg_button)) = cg_type_button else {
+                    extern "C" {
+                        fn CGWarpMouseCursorPosition(point: core_graphics::geometry::CGPoint)
+                            -> i32;
+                    }
+                    unsafe {
+                        CGWarpMouseCursorPosition(self.last_cursor);
+                    }
+                    return Ok(());
                 };
                 let event = CGEvent::new_mouse_event(
                     self.source.clone(),
