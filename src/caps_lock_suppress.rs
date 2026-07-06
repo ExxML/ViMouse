@@ -18,6 +18,11 @@ pub fn suppress() {
     }
     if platform_suppress() {
         SUPPRESSED.store(true, Ordering::Release);
+    } else {
+        eprintln!(
+            "ViMouse: failed to suppress CapsLock - it may toggle the system CapsLock \
+             state while used as a ViMouse binding."
+        );
     }
 }
 

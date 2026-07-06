@@ -55,7 +55,7 @@ pub fn key_label(key: Key) -> Option<char> {
 }
 
 // Glyph scale multiplier for a surface of (w, h) physical pixels. The glyph is 8*s px tall,
-// so s tracks the smaller dimension of the surface's monitor — the monitor the letters live on.
+// so s tracks the smaller dimension of the surface's monitor.
 fn letter_scale(w: usize, h: usize) -> usize {
     let target = w.min(h) as f64 * OVERLAY_LETTER_SIZE_MONITOR_FRACTION;
     (target / 8.0).round().max(1.0) as usize

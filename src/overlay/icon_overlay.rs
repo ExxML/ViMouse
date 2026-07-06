@@ -295,7 +295,11 @@ fn configure_overlay_window(window: &Window) {
 
 #[cfg(not(target_os = "windows"))]
 fn configure_overlay_hittest(window: &Window) {
-    let _ = window.set_cursor_hittest(false);
+    if let Err(error) = window.set_cursor_hittest(false) {
+        eprintln!(
+            "ViMouse: failed to make the icon overlay click-through ({error}) - it may intercept mouse clicks."
+        );
+    }
 }
 
 #[cfg(target_os = "windows")]

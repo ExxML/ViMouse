@@ -816,38 +816,54 @@ struct PlatformEmitter {
     display: *mut x11_dl::xlib::Display,
     scroll_accum_x: f64,
     scroll_accum_y: f64,
+    logged_xtest_fallback: bool,
 }
 
 #[cfg(target_os = "linux")]
 impl PlatformEmitter {
     fn new() -> Self {
         let Ok(xlib) = x11_dl::xlib::Xlib::open() else {
+            eprintln!(
+                "ViMouse: failed to load libX11 - mouse movement, clicks, and scrolling \
+                 will fall back to a degraded path and may not work. Install libX11 (e.g. libx11-6)."
+            );
             return Self {
                 xlib: None,
                 xtest: None,
                 display: ptr::null_mut(),
                 scroll_accum_x: 0.0,
                 scroll_accum_y: 0.0,
+                logged_xtest_fallback: false,
             };
         };
         let Ok(xtest) = x11_dl::xtest::Xf86vmode::open() else {
+            eprintln!(
+                "ViMouse: failed to load libXtst (XTest extension) - mouse movement, \
+                 clicks, and scrolling will not work. Install libXtst (e.g. libxtst6)."
+            );
             return Self {
                 xlib: None,
                 xtest: None,
                 display: ptr::null_mut(),
                 scroll_accum_x: 0.0,
                 scroll_accum_y: 0.0,
+                logged_xtest_fallback: false,
             };
         };
 
         let display = unsafe { (xlib.XOpenDisplay)(ptr::null()) };
         if display.is_null() {
+            eprintln!(
+                "ViMouse: XOpenDisplay failed (no X11 display - is DISPLAY set / are you on X11?). \
+                 Mouse movement, clicks, and scrolling will fall back to a degraded path."
+            );
             return Self {
                 xlib: None,
                 xtest: None,
                 display,
                 scroll_accum_x: 0.0,
                 scroll_accum_y: 0.0,
+                logged_xtest_fallback: false,
             };
         }
 
@@ -857,10 +873,12 @@ impl PlatformEmitter {
             display,
             scroll_accum_x: 0.0,
             scroll_accum_y: 0.0,
+            logged_xtest_fallback: false,
         }
     }
 
     fn emit(&mut self, action: &Action) -> Result<(), String> {
+        let mut xtest_failed = false;
         if let (Some(xlib), Some(xtest)) = (&self.xlib, &self.xtest) {
             let status = unsafe {
                 match action {
@@ -910,6 +928,15 @@ impl PlatformEmitter {
                 }
                 return Ok(());
             }
+            xtest_failed = true;
+        }
+
+        if xtest_failed && !self.logged_xtest_fallback {
+            eprintln!(
+                "ViMouse: an XTest event failed - falling back to the rdev simulate path. \
+                 Mouse control may be degraded."
+            );
+            self.logged_xtest_fallback = true;
         }
 
         simulate_input(&action_to_event_type(action))

@@ -306,6 +306,7 @@ struct OverlaySurfaceImp {
     texture_size: (u32, u32),
     cached_version: u64,
     cache_valid: bool,
+    logged_open_error: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -316,6 +317,7 @@ impl OverlaySurfaceImp {
             texture_size: (0, 0),
             cached_version: 0,
             cache_valid: false,
+            logged_open_error: false,
         }
     }
 
@@ -344,9 +346,20 @@ impl OverlaySurfaceImp {
             return;
         };
         let Ok(xlib_api) = xlib::Xlib::open() else {
+            if !self.logged_open_error {
+                eprintln!("ViMouse: failed to load libX11 - grid and mark overlays will not render.");
+                self.logged_open_error = true;
+            }
             return;
         };
         let Ok(xrender_api) = xrender::Xrender::open() else {
+            if !self.logged_open_error {
+                eprintln!(
+                    "ViMouse: failed to load libXrender - grid and mark overlays will not render. \
+                     Install libXrender (e.g. libxrender1)."
+                );
+                self.logged_open_error = true;
+            }
             return;
         };
 
@@ -604,7 +617,11 @@ fn configure_overlay_window_builder(builder: WindowBuilder) -> WindowBuilder {
 }
 
 fn configure_overlay_surface_window(window: &Window) {
-    let _ = window.set_cursor_hittest(false);
+    if let Err(error) = window.set_cursor_hittest(false) {
+        eprintln!(
+            "ViMouse: failed to make an overlay click-through ({error}) - it may intercept mouse clicks."
+        );
+    }
     platform_configure_overlay_window(window);
 }
 
