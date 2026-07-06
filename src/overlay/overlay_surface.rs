@@ -347,7 +347,9 @@ impl OverlaySurfaceImp {
         };
         let Ok(xlib_api) = xlib::Xlib::open() else {
             if !self.logged_open_error {
-                eprintln!("ViMouse: failed to load libX11 - grid and mark overlays will not render.");
+                eprintln!(
+                    "ViMouse: failed to load libX11 - grid and mark overlays will not render."
+                );
                 self.logged_open_error = true;
             }
             return;
