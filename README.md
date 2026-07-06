@@ -190,12 +190,13 @@ Run from `target/release/vimouse.exe` (Windows) or `target/release/vimouse` (Lin
 ### Platform Notes
 
 **macOS**
-- Release builds are ad-hoc signed but **not** notarized (no Apple Developer ID). On first launch macOS will block the app with an *"unidentified developer"* / *"cannot verify … free of malware"* prompt. To open it, either:
+- Release builds are ad-hoc signed but **not** notarized (no Apple Developer ID). On first launch, macOS will block the app with an *"unidentified developer"* / *"cannot verify free of malware"* prompt. To open it, either:
   - Right-click `ViMouse.app` → **Open**, then confirm (on macOS Sequoia and later, go to *System Settings → Privacy & Security* and click **Open Anyway**), or
   - Clear the quarantine attribute from Terminal: `xattr -dr com.apple.quarantine /path/to/ViMouse.app`
 - ViMouse requires Accessibility permission to intercept input. On first launch, it will prompt you to grant it under *System Settings → Privacy & Security → Accessibility*.
 
 **Windows**
+- Release builds are not signed with a trusted code-signing certificate (no EV/OV code signing cert). On first launch, Windows Defender will block the app with a *"Windows protected your PC"* prompt. To open it anyway, click **More info**, then **Run anyway**.
 - ViMouse must be launched with administrator privileges to interact with admin-level processes, such as Task Manager, UAC, Command Prompt, etc.
   - You can use Task Scheduler to run vimouse.exe with elevated privileges on PC startup.
 - Windows has a known bug where the mouse cursor disappears after waking up from sleep. The cursor will only reappear when the mouse is physically moved; ViMouse cannot wake the cursor (but can still control it). This bug can be programmatically circumvented but is more bloat than it's worth.
