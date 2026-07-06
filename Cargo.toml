@@ -5,7 +5,7 @@ edition = "2021"
 
 [package.metadata.bundle]
 name = "ViMouse"
-identifier = "io.github.exxml.vimouse"
+identifier = "com.github.exxml.vimouse"
 category = "Utility"
 
 [dependencies]
