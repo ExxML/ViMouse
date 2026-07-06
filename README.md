@@ -34,9 +34,6 @@ https://github.com/user-attachments/assets/9f66ab8f-f457-4b9f-b1b3-5b6602156a6b
 
 ## Usage
 
-> [!NOTE]
-> All keybinds mentioned below are configurable in `src/config.rs`.
-
 ViMouse has two modes, toggled like Vim:
 
 | Mode | Key | Indicator | Description |
@@ -47,6 +44,9 @@ ViMouse has two modes, toggled like Vim:
 A small icon in the bottom-left corner of your screen shows the current mode.
 
 **Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.**
+
+> [!NOTE]
+> All keybinds can be configured in `src/config.rs`. The builds available in [Releases](https://github.com/ExxML/ViMouse/releases/latest) use the default configuration outlined in this README. To use a custom configuration, you must [build from source](#option-2-build-from-source).
 
 ---
 
@@ -150,9 +150,6 @@ These keybinds are available in both Normal and Insert modes.
 
 ## Installation
 
-> [!NOTE]
-> Some (less advanced) keyboards may exhibit ghosting behaviour- they use a simple row/column matrix without diodes on each key switch. This means that certain three-key combinations may fail to register, causing some ViMouse keybindings to not work. This is a hardware limitation and there is unfortunately no possible software fix for this.
-
 ### Option 1: Download a Release (fastest)
 
 1. Download the compressed binary for your OS and architecture from [Releases](https://github.com/ExxML/ViMouse/releases/latest).
@@ -188,6 +185,9 @@ cargo build --release
 Run from `target/release/vimouse.exe` (Windows) or `target/release/vimouse` (Linux).
 
 ### Platform Notes
+
+**Hardware**
+- While using ViMouse, some (less advanced) keyboards may exhibit ghosting behaviour caused by using a simple row/column matrix rather than diodes on every key switch. This means that certain three-key combinations may fail to register, causing some ViMouse keybindings to not work. This is a hardware limitation and there is unfortunately no possible software fix for this.
 
 **macOS**
 - Release builds are ad-hoc signed but **not** notarized (no Apple Developer ID). On first launch, macOS will block the app with an *"unidentified developer"* / *"cannot verify free of malware"* prompt. To open it, either:
