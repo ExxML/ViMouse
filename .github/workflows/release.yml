@@ -44,10 +44,10 @@ jobs:
 
           # ---- Linux ----
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
             os: linux
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
             os: linux
 
     steps:
@@ -218,11 +218,11 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
+          name: ${{ env.APP_NAME }} ${{ github.ref_name }}
           files: |
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS.txt
-          generate_release_notes: true
-          draft: false
+          draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
