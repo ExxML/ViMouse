@@ -28,12 +28,12 @@ jobs:
         include:
           # ---- macOS ----
           - target: x86_64-apple-darwin
-            runner: macos-15-intel
+            runner: macos-26
             os: macos
             platform: darwin
             arch: x86_64
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-26
             os: macos
             platform: darwin
             arch: aarch64
