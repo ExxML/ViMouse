@@ -24,3 +24,4 @@ pub use overlay_glyph::key_label;
 pub use overlay_surface::create_overlay_owner_hwnd;
 pub use overlay_surface::create_overlay_window;
 pub use overlay_surface::create_topmost_anchor;
+pub use overlay_surface::hide_overlay_window;

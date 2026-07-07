@@ -22,9 +22,9 @@ use crate::monitor::collect_monitors;
 use crate::overlay::create_overlay_owner_hwnd;
 use crate::overlay::create_topmost_anchor;
 use crate::overlay::{
-    create_event_loop, create_overlay_window, create_window, key_label, paint_icon_overlay,
-    show_icon_overlay_window, GridOverlayState, GridSurface, IconOverlayState, IconSurface,
-    MarkGlyph, MarkOverlayState, MarkSurface,
+    create_event_loop, create_overlay_window, create_window, hide_overlay_window, key_label,
+    paint_icon_overlay, show_icon_overlay_window, GridOverlayState, GridSurface, IconOverlayState,
+    IconSurface, MarkGlyph, MarkOverlayState, MarkSurface,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
@@ -222,7 +222,7 @@ fn paint_icon_slot_or_exit(
     };
     match paint_icon_overlay(&slot.window, &mut slot.surface, &overlay) {
         Ok(()) if show => show_icon_overlay_window(&slot.window),
-        Ok(()) => slot.window.set_visible(false),
+        Ok(()) => hide_overlay_window(&slot.window),
         Err(error) => {
             eprintln!("icon overlay render error: {error}");
             shutdown_platform_input();
@@ -445,7 +445,7 @@ fn main() {
                 if icon_changed || overlays_changed {
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
-                        icon_slots[last_selected_monitor].window.set_visible(false);
+                        hide_overlay_window(&icon_slots[last_selected_monitor].window);
                     }
 
                     last_icon_overlay = icon_overlay;
@@ -465,7 +465,7 @@ fn main() {
                 let grid_state = snap.grid_state;
                 if last_grid_state != grid_state {
                     if last_selected_monitor != selected_monitor && last_grid_state.visible {
-                        grid_slots[last_selected_monitor].window.set_visible(false);
+                        hide_overlay_window(&grid_slots[last_selected_monitor].window);
                     }
 
                     last_grid_state = grid_state;
@@ -475,9 +475,7 @@ fn main() {
                 let letters_state = snap.letters_state;
                 if last_letters_state != letters_state {
                     if last_selected_monitor != selected_monitor && last_letters_state.visible {
-                        letters_slots[last_selected_monitor]
-                            .window
-                            .set_visible(false);
+                        hide_overlay_window(&letters_slots[last_selected_monitor].window);
                     }
 
                     last_letters_state = letters_state;

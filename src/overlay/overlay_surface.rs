@@ -81,7 +81,7 @@ impl OverlaySurface {
         fill: impl FnOnce(&mut [FillBuf], usize, usize),
     ) {
         if !visible {
-            window.set_visible(false);
+            hide_overlay_window(window);
             return;
         }
         let (w, h) = monitor_size_physical(monitor);
@@ -712,6 +712,22 @@ fn show_overlay_window(window: &Window) {
 #[cfg(not(target_os = "macos"))]
 fn show_overlay_window(window: &Window) {
     window.set_visible(true);
+}
+
+// Mirrors show_overlay_window: call orderOut: directly instead of winit's
+// set_visible(false), which routes through its own orderOut: wrapper.
+#[cfg(target_os = "macos")]
+pub fn hide_overlay_window(window: &Window) {
+    unsafe {
+        use objc::runtime::Object;
+        let ns_window = window.ns_window() as *mut Object;
+        let _: () = msg_send![ns_window, orderOut: std::ptr::null_mut::<Object>()];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn hide_overlay_window(window: &Window) {
+    window.set_visible(false);
 }
 
 // ── size / position helpers ───────────────────────────────────────────────────
