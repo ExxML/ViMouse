@@ -259,7 +259,7 @@ fn handle_key_press(
                     true
                 }
                 // Capture mouse keys even when OS modifiers (Ctrl/Alt/Shift/Meta) are held, so the
-                // modifier state is preserved on the mouse clicks (allowing Ctrl+ Clicks, etc.). 
+                // modifier state is preserved on mouse clicks (allowing Ctrl+clicks, etc.).
                 // MOUSE_3/4/5 pass through when a modifier is held, preserving shortcuts like Cmd+O.
                 else if is_mouse_key(key)
                     && !has_uncaptured_non_modifier_non_os(&tracker, key)
