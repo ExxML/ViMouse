@@ -145,7 +145,7 @@ These keybinds are available in both Normal and Insert modes.
 
 | Key | Action |
 |-----|--------|
-| `Right Shift` | Toggle ViMouse overlay |
+| `Right Alt` | Toggle ViMouse overlay |
 | `Left Ctrl + Left Alt + Left Shift + Q` | Quit ViMouse |
 
 ## Installation
