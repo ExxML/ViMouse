@@ -241,8 +241,8 @@ fn handle_key_press(
             Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
             Mode::Normal => {
                 #[allow(clippy::if_same_then_else)]
-                // Mark keys are captured unconditionally (set / jump / unmark all decided later).
-                if is_mark_key(key) {
+                // Mark keys (set / jump / unmark single); only suppressed when pressed exclusively
+                if is_mark_key(key) && only_key_held(&tracker.held_keys, key) {
                     true
                 }
                 // Unmark-all chord: capture the completing key (e.g. BackQuote) so the chord is
@@ -899,6 +899,13 @@ fn unmark_all_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
 
 fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
     !keys.iter().any(|key| is_runtime_modifier(*key))
+}
+
+// True when `key` is the only key held, allowing KEY_SCROLL and KEY_UNMARK as concurrent modifiers
+// (they may share keybinds). Used to gate mark keys so they fire only when pressed exclusively.
+fn only_key_held(keys: &HashSet<Key>, key: Key) -> bool {
+    keys.iter()
+        .all(|held| *held == key || *held == KEY_SCROLL || *held == KEY_UNMARK)
 }
 
 fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
