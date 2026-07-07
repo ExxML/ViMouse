@@ -258,9 +258,14 @@ fn handle_key_press(
                 {
                     true
                 }
-                // Capture mouse keys even when OS modifiers (Ctrl/Alt/Shift/Meta) are held,
-                // so the OS modifier state is preserved on the resulting button/scroll event.
-                else if is_mouse_key(key) && !has_uncaptured_non_modifier_non_os(&tracker, key) {
+                // Capture mouse keys even when OS modifiers (Ctrl/Alt/Shift/Meta) are held, so the
+                // modifier state is preserved on the mouse clicks (allowing Ctrl+ Clicks, etc.). 
+                // MOUSE_3/4/5 pass through when a modifier is held, preserving shortcuts like Cmd+O.
+                else if is_mouse_key(key)
+                    && !has_uncaptured_non_modifier_non_os(&tracker, key)
+                    && (matches!(key, KEY_MOUSE_1 | KEY_MOUSE_2)
+                        || no_os_modifiers_held(&tracker.held_keys))
+                {
                     true
                 }
                 // Capture move keys mid-scroll so modifier state is preserved on the scroll event
@@ -958,6 +963,10 @@ fn is_mouse_key(key: Key) -> bool {
         key,
         KEY_MOUSE_1 | KEY_MOUSE_2 | KEY_MOUSE_3 | KEY_MOUSE_4 | KEY_MOUSE_5
     )
+}
+
+fn no_os_modifiers_held(keys: &HashSet<Key>) -> bool {
+    !keys.iter().any(|key| is_os_modifier(*key))
 }
 
 fn is_jump_key(key: Key) -> bool {
