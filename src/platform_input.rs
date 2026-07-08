@@ -3,7 +3,8 @@ use crate::state::Action;
 use crate::state::Point;
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
-    CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
+    CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField,
+    ScrollEventUnit,
 };
 #[cfg(target_os = "macos")]
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
@@ -638,6 +639,9 @@ struct PlatformEmitter {
     last_press_time: std::time::Instant,
     // Last known cursor position; updated on MouseMove so button events don't need to query it.
     last_cursor: core_graphics::geometry::CGPoint,
+    // Fractional line deltas carried between scroll events (see the Scroll arm in emit).
+    scroll_line_accum_x: f64,
+    scroll_line_accum_y: f64,
 }
 
 #[cfg(target_os = "macos")]
@@ -658,6 +662,8 @@ impl PlatformEmitter {
             last_press_left: None,
             last_press_time: std::time::Instant::now(),
             last_cursor: core_graphics::geometry::CGPoint { x: 0.0, y: 0.0 },
+            scroll_line_accum_x: 0.0,
+            scroll_line_accum_y: 0.0,
         }
     }
 
@@ -750,8 +756,20 @@ impl PlatformEmitter {
             Action::Scroll { delta_x, delta_y } => {
                 // 48.0 accurately scales ViMouse scroll units to macOS pixel units.
                 const PIXELS_PER_UNIT: f64 = 48.0;
+                // macOS derives an event's line (fixed-point) delta as 1/10 of its pixel delta.
+                const PIXELS_PER_LINE: f64 = 10.0;
                 let px_y = (delta_y * PIXELS_PER_UNIT).round() as i32;
                 let px_x = (delta_x * PIXELS_PER_UNIT).round() as i32;
+
+                // Coarse consumers (e.g. Tk) clamp any sub-line delta to a whole step, erasing
+                // speed differences; carry fractions so speed lives in the whole-line event rate.
+                self.scroll_line_accum_y += delta_y * PIXELS_PER_UNIT / PIXELS_PER_LINE;
+                self.scroll_line_accum_x += delta_x * PIXELS_PER_UNIT / PIXELS_PER_LINE;
+                let lines_y = self.scroll_line_accum_y.trunc();
+                let lines_x = self.scroll_line_accum_x.trunc();
+                self.scroll_line_accum_y -= lines_y;
+                self.scroll_line_accum_x -= lines_x;
+
                 let event = CGEvent::new_scroll_event(
                     self.source.clone(),
                     ScrollEventUnit::PIXEL,
@@ -761,6 +779,37 @@ impl PlatformEmitter {
                     0,
                 )
                 .map_err(|_| "CGEvent scroll creation failed".to_string())?;
+                // Writing a line field rewrites its derived pixel/fixed-point fields, so the
+                // pixel and fixed-point fields must be (re)written after the line fields.
+                event.set_integer_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1,
+                    lines_y as i64,
+                );
+                event.set_integer_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_2,
+                    lines_x as i64,
+                );
+                event.set_integer_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1,
+                    px_y as i64,
+                );
+                event.set_integer_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2,
+                    px_x as i64,
+                );
+                event.set_double_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_1,
+                    lines_y,
+                );
+                event.set_double_value_field(
+                    EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_2,
+                    lines_x,
+                );
+                // The event source seeds flags from the live modifier state, and runtime
+                // modifiers are not suppressed on macOS - strip theirs for a plain scroll.
+                let mut flags = event.get_flags();
+                flags.remove(runtime_modifier_flags());
+                event.set_flags(flags);
                 event.post(core_graphics::event::CGEventTapLocation::HID);
                 return Ok(());
             }
@@ -789,6 +838,25 @@ impl PlatformEmitter {
 
         Ok(())
     }
+}
+
+/// Combined modifier flags of the runtime modifier keys (KEY_SCROLL / KEY_FAST / KEY_SLOW),
+/// so synthetic scrolls can shed the flags those held keys would otherwise stamp on them.
+#[cfg(target_os = "macos")]
+fn runtime_modifier_flags() -> CGEventFlags {
+    use crate::config::{KEY_FAST, KEY_SCROLL, KEY_SLOW};
+    let mut flags = CGEventFlags::CGEventFlagNull;
+    for key in [KEY_SCROLL, KEY_FAST, KEY_SLOW] {
+        flags |= match key {
+            rdev::Key::ShiftLeft | rdev::Key::ShiftRight => CGEventFlags::CGEventFlagShift,
+            rdev::Key::Alt | rdev::Key::AltGr => CGEventFlags::CGEventFlagAlternate,
+            rdev::Key::ControlLeft | rdev::Key::ControlRight => CGEventFlags::CGEventFlagControl,
+            rdev::Key::MetaLeft | rdev::Key::MetaRight => CGEventFlags::CGEventFlagCommand,
+            rdev::Key::Function => CGEventFlags::CGEventFlagSecondaryFn,
+            _ => CGEventFlags::CGEventFlagNull,
+        };
+    }
+    flags
 }
 
 #[cfg(target_os = "macos")]
