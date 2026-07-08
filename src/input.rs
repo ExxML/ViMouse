@@ -574,17 +574,8 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
     }
 }
 
-#[cfg(target_os = "macos")]
-fn sync_runtime_modifier_suppression(_state: &SharedState, tracker: &mut HookTracker) {
-    // Keep the macOS hook simple: avoid replaying keyboard events from inside the event tap.
-    tracker.pending_key_events.clear();
-    tracker.suppressed_modifiers.clear();
-}
-
-#[cfg(not(target_os = "macos"))]
-// Hide runtime modifiers from the OS during movement so they don't corrupt synthetic events
-// (e.g. Shift leaking onto scroll). Send fake key-release to hide, then fake key-press to restore when
-// movement stops, so the OS key state stays consistent with what the user is physically holding.
+// Hide runtime modifiers from the OS while movement is active (fake key-release, restored by
+// fake key-press on stop) so held modifiers don't alter how apps interpret synthetic events.
 fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
     // There are at most 3 runtime modifiers - use a stack array to avoid heap allocation.
     const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
