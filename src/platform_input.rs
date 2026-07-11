@@ -651,8 +651,8 @@ impl PlatformEmitter {
             fn CGSetLocalEventsSuppressionInterval(seconds: f64);
         }
         unsafe {
-            // CGWarpMouseCursorPosition (used below for plain moves) otherwise suppresses the
-            // OS's real mouse-move event stream for ~0.25s after each call.
+            // By default macOS ignores physical mouse input for ~0.25s after each
+            // synthetic mouse event; disable that so the real mouse always works.
             CGSetLocalEventsSuppressionInterval(0.0);
         }
         Self {
@@ -694,25 +694,14 @@ impl PlatformEmitter {
                 self.last_cursor = core_graphics::geometry::CGPoint { x: *x, y: *y };
                 // macOS requires LeftMouseDragged/RightMouseDragged when a button is held;
                 // plain MouseMoved is ignored by apps that use OS drag sessions (Finder, Chrome tabs).
-                let cg_type_button = if mouse_button_is_down(rdev::Button::Left) {
-                    Some((CGEventType::LeftMouseDragged, CGMouseButton::Left))
+                let (cg_type, cg_button) = if mouse_button_is_down(rdev::Button::Left) {
+                    (CGEventType::LeftMouseDragged, CGMouseButton::Left)
                 } else if mouse_button_is_down(rdev::Button::Right) {
-                    Some((CGEventType::RightMouseDragged, CGMouseButton::Right))
+                    (CGEventType::RightMouseDragged, CGMouseButton::Right)
                 } else {
-                    None
-                };
-                // No button held: CGWarpMouseCursorPosition repositions the cursor directly,
-                // without allocating/posting a CGEvent through the WindowServer.
-                let Some((cg_type, cg_button)) = cg_type_button else {
-                    extern "C" {
-                        fn CGWarpMouseCursorPosition(
-                            point: core_graphics::geometry::CGPoint,
-                        ) -> i32;
-                    }
-                    unsafe {
-                        CGWarpMouseCursorPosition(self.last_cursor);
-                    }
-                    return Ok(());
+                    // Warping instead would skip the event stream, leaving apps' hover
+                    // cursors (I-beam, pointer) stale until the next click.
+                    (CGEventType::MouseMoved, CGMouseButton::Left)
                 };
                 let event = CGEvent::new_mouse_event(
                     self.source.clone(),
@@ -721,7 +710,13 @@ impl PlatformEmitter {
                     cg_button,
                 )
                 .map_err(|_| "CGEvent mouse move creation failed".to_string())?;
-                event.post(CGEventTapLocation::HID);
+                // Plain moves post at Session, above the HID insertion point, so these
+                // high-rate events skip our own HID tap (motion loop already updates its state).
+                event.post(if matches!(cg_type, CGEventType::MouseMoved) {
+                    CGEventTapLocation::Session
+                } else {
+                    CGEventTapLocation::HID
+                });
                 return Ok(());
             }
             Action::ButtonPress(rdev::Button::Left) => {
