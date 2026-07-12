@@ -48,9 +48,12 @@ pub const KEY_MOUSE_4: Key = Key::KeyO; // Back (X1) click
 pub const KEY_MOUSE_5: Key = Key::KeyP; // Forward (X2) click
 pub const KEY_SCROLL: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
 
-// Speed modifier keys for cursor movement and scrolling (recommend using modifier or non-text keys)
+// Speed modifier keys for cursor movement and scrolling
+// SUPPRESS flags suppress the key in Normal mode
 pub const KEY_FAST: Key = Key::Space;
+pub const KEY_FAST_SUPPRESS: bool = true;
 pub const KEY_SLOW: Key = Key::Alt;
+pub const KEY_SLOW_SUPPRESS: bool = false;
 // Speed multipliers
 pub const FAST_MULTIPLIER: f64 = 3.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;

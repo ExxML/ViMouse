@@ -1,10 +1,11 @@
 use crate::config::{
     ACCEL_DELAY_SECS, CHORD_QUIT, CHORD_UNMARK_ALL, CURSOR_ACCELERATION, CURSOR_BASE_SPEED,
     CURSOR_MAX_SPEED, FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEYS_MARK, KEY_CYCLE_MONITOR,
-    KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5,
-    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL,
-    KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK,
-    SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    KEY_FAST, KEY_FAST_SUPPRESS, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3,
+    KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
+    KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_SLOW_SUPPRESS, KEY_TOGGLE_GRID,
+    KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK, SCROLL_ACCELERATION,
+    SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -251,9 +252,11 @@ fn handle_key_press(
                 else if unmark_all_chord_active(&tracker.held_keys, key) {
                     true
                 }
-                // Only capture KEY_FAST/KEY_SLOW when scroll/move active.
+                // Capture KEY_FAST/KEY_SLOW when scroll/move active, or unconditionally when
+                // configured always-suppressed.
                 else if (key == KEY_FAST || key == KEY_SLOW)
-                    && (tracker.held_keys.contains(&KEY_SCROLL)
+                    && (always_suppressed_modifier(key)
+                        || tracker.held_keys.contains(&KEY_SCROLL)
                         || movement_active(&state.pressed_keys))
                 {
                     true
@@ -593,7 +596,8 @@ fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTrac
             }
         } else if !want_suppressed && is_suppressed {
             tracker.suppressed_modifiers.remove(&key);
-            if tracker.held_keys.contains(&key) {
+            // Never restore an always-suppressed modifier to the OS.
+            if tracker.held_keys.contains(&key) && !always_suppressed_modifier(key) {
                 tracker.pending_key_events.push((key, true));
                 tracker.captured_keys.remove(&key);
             }
@@ -974,6 +978,10 @@ fn is_mark_key(key: Key) -> bool {
 
 fn is_runtime_modifier(key: Key) -> bool {
     key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
+}
+
+fn always_suppressed_modifier(key: Key) -> bool {
+    (key == KEY_FAST && KEY_FAST_SUPPRESS) || (key == KEY_SLOW && KEY_SLOW_SUPPRESS)
 }
 
 /// Captures the subset of SharedState that drives overlay rendering.
