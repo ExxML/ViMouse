@@ -11,8 +11,8 @@ use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
 use crate::platform_input::set_caps_lock_remap;
 use crate::platform_input::{
-    scroll_direction_sign, shutdown_platform_input, simulate_input, InputEmitter, BUTTON_MOUSE_4,
-    BUTTON_MOUSE_5,
+    movement_device_scale, scroll_direction_sign, shutdown_platform_input, simulate_input,
+    InputEmitter, BUTTON_MOUSE_4, BUTTON_MOUSE_5,
 };
 use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
 #[cfg(not(target_os = "macos"))]
@@ -671,10 +671,17 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
         CURSOR_MAX_SPEED,
     ) * speed_multiplier;
 
+    // Speeds are logical points/sec; scale the delta into the current monitor's device space so
+    // apparent speed stays constant across monitors of differing DPI (see movement_device_scale).
+    let device_scale = state
+        .monitors
+        .get(state.selected_monitor)
+        .map_or(1.0, |monitor| movement_device_scale(monitor.scale_factor));
+
     let previous_cursor = state.cursor;
     let mut next_cursor = previous_cursor;
-    next_cursor.x += direction.x * speed_x * delta_seconds;
-    next_cursor.y += direction.y * speed_y * delta_seconds;
+    next_cursor.x += direction.x * speed_x * delta_seconds * device_scale;
+    next_cursor.y += direction.y * speed_y * delta_seconds * device_scale;
 
     if let Some(index) = clamp_and_find_monitor(&mut next_cursor, &state.monitors) {
         if next_cursor != previous_cursor {

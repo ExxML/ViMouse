@@ -67,14 +67,15 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 | `Space` (hold) | 3× speed |
 | `Left Alt` (hold) | 0.3× speed |
 
-Tap a move key to move the cursor 100 px/sec. Hold to move 500 px/sec.
+Tap a move key to move the cursor 100 logical pts/sec. Hold to move 500 logical pts/sec.
+- Speeds are in logical points (DPI-normalized) so the cursor feels the same across monitors of differing DPI.
 
 All values and configurations are modifiable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
 
 For example:
 - If you want to disable mouse acceleration, set `CURSOR_ACCELERATION` to 0.
 - If you want to use two-speed movement (current default), set `CURSOR_ACCELERATION` to `f64::INFINITY` and tweak `CURSOR_MAX_SPEED` to your preference.
-- If you want normal mouse acceleration, set `CURSOR_ACCELERATION` to a reasonable px/sec² value.
+- If you want normal mouse acceleration, set `CURSOR_ACCELERATION` to a reasonable logical pts/sec² value.
 
 > [!TIP]
 > Hold two movement keys simultaneously to move diagonally.

@@ -17,9 +17,11 @@ pub const TICK_RATE_HZ: u64 = 240;
 
 pub const ACCEL_DELAY_SECS: f64 = 0.15; // seconds before cursor/scroll acceleration starts
 
-pub const CURSOR_BASE_SPEED: f64 = 100.0; // px/sec during initial hold (before acceleration starts)
-pub const CURSOR_ACCELERATION: f64 = f64::INFINITY; // additional px/sec² after ACCEL_DELAY_SECS
-pub const CURSOR_MAX_SPEED: f64 = 500.0; // px/sec ceiling when accelerating
+// Cursor speeds are logical points/sec (DPI-normalized), so apparent speed stays constant across
+// monitors of differing DPI. See movement_device_scale in platform_input.rs.
+pub const CURSOR_BASE_SPEED: f64 = 100.0; // logical pts/sec during initial hold (before acceleration starts)
+pub const CURSOR_ACCELERATION: f64 = f64::INFINITY; // additional logical pts/sec² after ACCEL_DELAY_SECS
+pub const CURSOR_MAX_SPEED: f64 = 500.0; // logical pts/sec ceiling when accelerating
 
 pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold (before acceleration starts)
 pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS

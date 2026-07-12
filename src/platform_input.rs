@@ -191,6 +191,20 @@ fn detect_scroll_direction_sign() -> (f64, f64) {
     (1.0, 1.0)
 }
 
+/// Scales a logical-point movement delta into the monitor's device space, keeping apparent speed
+/// DPI-constant. Windows/Linux cursor APIs take physical pixels (scale by `scale_factor`); macOS's
+/// event-tap space is already logical points (unscaled). On Windows this relies on winit making the
+/// process per-monitor-DPI-aware, so cursor/monitor coords are true physical pixels.
+#[cfg(not(target_os = "macos"))]
+pub fn movement_device_scale(scale_factor: f64) -> f64 {
+    scale_factor
+}
+
+#[cfg(target_os = "macos")]
+pub fn movement_device_scale(_scale_factor: f64) -> f64 {
+    1.0
+}
+
 // macOS event suppression and simulation works differently than Windows or Linux
 // therefore, we use a custom event tap on macOS instead of rdev's built-in grab/simulate functionality
 // otherwise a "Trace/BPT trap: 5" error is thrown when emitting synthetic key events
