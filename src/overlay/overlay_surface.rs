@@ -689,12 +689,7 @@ fn platform_configure_overlay_window(window: &Window) {
 
 #[cfg(target_os = "macos")]
 fn platform_configure_overlay_window(window: &Window) {
-    unsafe {
-        use objc::runtime::Object;
-        let ns_window = window.ns_window() as *mut Object;
-        // kCGDockWindowLevel is 20; use 21 so the overlay sits just above the dock but below the icon (102).
-        let _: () = msg_send![ns_window, setLevel: 21i64];
-    }
+    super::raise_overlay_window_level(window);
 }
 
 // winit's set_visible(true) calls makeKeyAndOrderFront:, which also hands this

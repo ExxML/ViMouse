@@ -342,13 +342,7 @@ fn configure_platform_overlay_window(window: &Window) {
 
 #[cfg(target_os = "macos")]
 fn configure_platform_overlay_window(window: &Window) {
-    unsafe {
-        use objc::runtime::Object;
-        use winit::platform::macos::WindowExtMacOS;
-        let ns_window = window.ns_window() as *mut Object;
-        // Level 102: above grid (21) and app dock (20), so icon is topmost.
-        let _: () = msg_send![ns_window, setLevel: 102i64];
-    }
+    super::raise_overlay_window_level(window);
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]

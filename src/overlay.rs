@@ -25,3 +25,15 @@ pub use overlay_surface::create_overlay_owner_hwnd;
 pub use overlay_surface::create_overlay_window;
 pub use overlay_surface::create_topmost_anchor;
 pub use overlay_surface::hide_overlay_window;
+
+// Raise an overlay window above menus, Spotlight, tooltips, and drag images.
+#[cfg(target_os = "macos")]
+fn raise_overlay_window_level(window: &winit::window::Window) {
+    unsafe {
+        use objc::runtime::Object;
+        use winit::platform::macos::WindowExtMacOS;
+        let ns_window = window.ns_window() as *mut Object;
+        // One below kCGScreenSaverWindowLevel (1000): above every transient system UI, below the screen saver.
+        let _: () = msg_send![ns_window, setLevel: 999i64];
+    }
+}
