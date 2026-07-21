@@ -15,13 +15,13 @@ pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length a
 // Recommend setting this to match the refresh rate of your display
 pub const TICK_RATE_HZ: u64 = 240;
 
-pub const ACCEL_DELAY_SECS: f64 = 0.15; // seconds before cursor/scroll acceleration starts
+pub const ACCEL_DELAY_SECS: f64 = 0.13; // seconds before cursor/scroll acceleration starts
 
 // Cursor speeds are logical points/sec (DPI-normalized), so apparent speed stays constant across
 // monitors of differing DPI. See movement_device_scale in platform_input.rs.
-pub const CURSOR_BASE_SPEED: f64 = 100.0; // logical pts/sec during initial hold (before acceleration starts)
+pub const CURSOR_BASE_SPEED: f64 = 50.0; // logical pts/sec during initial hold (before acceleration starts)
 pub const CURSOR_ACCELERATION: f64 = f64::INFINITY; // additional logical pts/sec² after ACCEL_DELAY_SECS
-pub const CURSOR_MAX_SPEED: f64 = 500.0; // logical pts/sec ceiling when accelerating
+pub const CURSOR_MAX_SPEED: f64 = 300.0; // logical pts/sec ceiling when accelerating
 
 pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold (before acceleration starts)
 pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
@@ -55,8 +55,8 @@ pub const KEY_SCROLL: Key = Key::ShiftLeft;
 pub const KEY_FAST: Key = Key::Space;
 pub const KEY_SLOW: Key = Key::Alt;
 // Speed multipliers
-pub const FAST_MULTIPLIER: f64 = 3.0;
-pub const SLOW_MULTIPLIER: f64 = 0.3;
+pub const FAST_MULTIPLIER: f64 = 5.0;
+pub const SLOW_MULTIPLIER: f64 = 0.5;
 
 // Monitor cycling
 pub const KEY_CYCLE_MONITOR: Key = Key::KeyN;
@@ -73,7 +73,7 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 // Seconds to wait for the second jump grid key (subcell jump)
 // - 0.0 to disable subcell jumps
 // - f64::INFINITY to keep the subcell jump primed indefinitely
-pub const JUMP_GRID_DELAY: f64 = 1.0;
+pub const JUMP_GRID_DELAY: f64 = f64::INFINITY;
 // Toggle jump grid overlay
 pub const KEY_TOGGLE_GRID: Key = Key::Slash;
 // Toggle grid cell letter overlay

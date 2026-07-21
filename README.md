@@ -117,7 +117,7 @@ The screen is divided into a 5×3 grid - press the labeled key to teleport the c
 │   Z   │   X   │   C   │   V   │   B   │
 └───────┴───────┴───────┴───────┴───────┘
 ```
-- Each cell is also divided into a 5×3 grid. Press a second jump grid key within 1 second to jump to a subcell within the current cell.
+- Each cell is also divided into a 5×3 grid. Press a second jump grid key to jump to a subcell within the current cell.
 - Press `Slash` to toggle a reference jump grid overlay to serve as a guide for where to jump.
 - Press `Period` to toggle a reference grid of letters that show where you will jump for each letter.
 
