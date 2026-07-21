@@ -10,6 +10,8 @@ pub enum IconOverlayPos {
 }
 pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
 pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length as a fraction of the monitor's smaller dimension
+pub const ICON_OVERLAY_NORMAL_COLOR: [u8; 4] = [30, 160, 98, 255];
+pub const ICON_OVERLAY_INSERT_COLOR: [u8; 4] = [44, 55, 72, 255];
 
 // Frequency of the motion loop that emits synthetic mouse/scroll events
 // Recommend setting this to match the refresh rate of your display

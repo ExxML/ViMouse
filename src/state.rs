@@ -1,4 +1,7 @@
-use crate::config::{DEFAULT_GRID_ENABLED, DEFAULT_GRID_LETTER_ENABLED};
+use crate::config::{
+    DEFAULT_GRID_ENABLED, DEFAULT_GRID_LETTER_ENABLED, ICON_OVERLAY_INSERT_COLOR,
+    ICON_OVERLAY_NORMAL_COLOR,
+};
 use rdev::{Button, Key};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -22,8 +25,8 @@ impl Mode {
 
     pub fn background(self) -> [u8; 4] {
         match self {
-            Self::Normal => [30, 160, 98, 255],
-            Self::Insert => [44, 55, 72, 255],
+            Self::Normal => ICON_OVERLAY_NORMAL_COLOR,
+            Self::Insert => ICON_OVERLAY_INSERT_COLOR,
         }
     }
 }
