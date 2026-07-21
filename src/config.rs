@@ -27,8 +27,9 @@ pub const SCROLL_BASE_SPEED: f64 = 10.0; // scroll units/sec during initial hold
 pub const SCROLL_ACCELERATION: f64 = 0.0; // additional scroll units/sec² after ACCEL_DELAY_SECS
 pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling when accelerating
 
-// Most keys below are subject to capture/suppression - see handle_key_press() comment in input.rs for details
-// Generally, the keybinds with the comment "Recommend using a modifier or non-text key" are not captured/suppressed
+// In Normal mode every key is captured by ViMouse except OS modifiers (Ctrl/Alt/Shift/Meta),
+// KEYS_EXEMPT, and unmapped keys; holding an OS modifier first leaks subsequent keys to the OS.
+// See handle_key_press() in input.rs for the full decision order.
 
 // Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.
 
@@ -48,14 +49,11 @@ pub const KEY_MOUSE_2: Key = Key::Quote; // Right click
 pub const KEY_MOUSE_3: Key = Key::KeyM; // Middle (scroll) click
 pub const KEY_MOUSE_4: Key = Key::KeyO; // Back (X1) click
 pub const KEY_MOUSE_5: Key = Key::KeyP; // Forward (X2) click
-pub const KEY_SCROLL: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
+pub const KEY_SCROLL: Key = Key::ShiftLeft;
 
 // Speed modifier keys for cursor movement and scrolling
-// SUPPRESS flags suppress the key in Normal mode
 pub const KEY_FAST: Key = Key::Space;
-pub const KEY_FAST_SUPPRESS: bool = true;
 pub const KEY_SLOW: Key = Key::Alt;
-pub const KEY_SLOW_SUPPRESS: bool = false;
 // Speed multipliers
 pub const FAST_MULTIPLIER: f64 = 3.0;
 pub const SLOW_MULTIPLIER: f64 = 0.3;
@@ -111,8 +109,58 @@ pub const KEYS_MARK: &[Key] = &[
     Key::Num9,
     Key::Num0,
 ];
-pub const KEY_UNMARK: Key = Key::ShiftLeft; // Recommend using a modifier or non-text key
-pub const CHORD_UNMARK_ALL: &[Key] = &[Key::ShiftLeft, Key::BackQuote];
+pub const KEY_UNMARK: Key = Key::ShiftLeft; // Hold + KEYS_MARK to unmark; recommend using a modifier or non-text key
+pub const KEY_UNMARK_ALL: Key = Key::BackQuote; // KEY_UNMARK + KEY_UNMARK_ALL to remove all marks
+
+// Keys that always pass through to the OS, even in Normal mode. Unmappable keys pass through by default.
+pub const KEYS_EXEMPT: &[Key] = &[
+    Key::Return,
+    Key::Escape,
+    Key::Tab,
+    Key::Backspace,
+    Key::Delete,
+    Key::Insert,
+    Key::Home,
+    Key::End,
+    Key::PageUp,
+    Key::PageDown,
+    Key::UpArrow,
+    Key::DownArrow,
+    Key::LeftArrow,
+    Key::RightArrow,
+    Key::F1,
+    Key::F2,
+    Key::F3,
+    Key::F4,
+    Key::F5,
+    Key::F6,
+    Key::F7,
+    Key::F8,
+    Key::F9,
+    Key::F10,
+    Key::F11,
+    Key::F12,
+    Key::PrintScreen,
+    Key::ScrollLock,
+    Key::Pause,
+    Key::NumLock,
+    Key::Kp0,
+    Key::Kp1,
+    Key::Kp2,
+    Key::Kp3,
+    Key::Kp4,
+    Key::Kp5,
+    Key::Kp6,
+    Key::Kp7,
+    Key::Kp8,
+    Key::Kp9,
+    Key::KpReturn,
+    Key::KpMinus,
+    Key::KpPlus,
+    Key::KpMultiply,
+    Key::KpDivide,
+    Key::KpDelete,
+];
 
 // Quit chord (available in both Normal and Insert mode)
 pub const CHORD_QUIT: &[Key] = &[Key::ControlLeft, Key::Alt, Key::ShiftLeft, Key::KeyQ];

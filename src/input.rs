@@ -1,11 +1,11 @@
 use crate::config::{
-    ACCEL_DELAY_SECS, CHORD_QUIT, CHORD_UNMARK_ALL, CURSOR_ACCELERATION, CURSOR_BASE_SPEED,
-    CURSOR_MAX_SPEED, FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEYS_MARK, KEY_CYCLE_MONITOR,
-    KEY_FAST, KEY_FAST_SUPPRESS, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3,
-    KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
-    KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_SLOW_SUPPRESS, KEY_TOGGLE_GRID,
-    KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK, SCROLL_ACCELERATION,
-    SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
+    FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK, KEY_CYCLE_MONITOR,
+    KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5,
+    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL,
+    KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK,
+    KEY_UNMARK_ALL, SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER,
+    TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -24,26 +24,30 @@ use std::time::{Duration, Instant};
 
 const MOVE_KEYS: [Key; 4] = [KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE_RIGHT];
 
-// Definitions
+// Key ownership model
 //
-// Captured: Never sent to the OS. ViMouse acts on it (move cursor, click, switch
-// mode, etc.) and the OS never sees the event. Always captured from key-down
-// until key-up.
+// Captured: dropped from the OS stream; ViMouse acts on it (or it is reserved-dead). Decided
+// at press time and sticks for the key's lifetime - a captured key's release is dropped too.
 //
-// Suppressed: Conditionally sent to the OS. ViMouse does not always act on the
-// key, but temporarily hides it from the OS. This applies to runtime modifiers
-// (KEY_SCROLL / KEY_FAST / KEY_SLOW) while the cursor is moving, otherwise the
-// OS would treat them as held modifier keys and do unexpected things (e.g.
-// interpret a scroll as Shift+scroll). ViMouse sends a fake key-release to hide
-// them, then a fake key-press to restore them once movement stops.
+// Forwarded: an OS modifier (Ctrl/Alt/Shift/Meta) pressed while ViMouse is idle is passed to
+// the OS and recorded in press order. While any forwarded modifier is held ("leak mode"),
+// other keys pass through so OS shortcuts keep working - with a few exceptions, see
+// handle_key_press.
 //
-// Captured keys are owned by ViMouse for their full lifetime; suppressed keys
-// are still "held" from ViMouse's perspective but transiently hidden from the OS.
+// Swallowed: an OS modifier pressed while a ViMouse action is active (any captured key held)
+// is hidden from the OS until its physical release; the release is hidden too.
+//
+// Ghosted: a forwarded movement modifier is temporarily hidden with a synthetic key-release
+// while ViMouse moves or scrolls, then restored with a synthetic key-press - see
+// sync_movement_modifier_ghosting.
 #[derive(Default)]
 struct HookTracker {
     held_keys: HashSet<Key>,
     captured_keys: HashSet<Key>,
-    suppressed_modifiers: HashSet<Key>,
+    // OS modifiers currently forwarded to the OS, oldest press first.
+    forwarded_modifiers: Vec<Key>,
+    swallowed_modifiers: HashSet<Key>,
+    ghosted_modifiers: HashSet<Key>,
     // Windows/macOS only: their low-level hooks re-observe our synthetic events; Linux's grab doesn't.
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     passthrough_key_events: Vec<(Key, bool)>,
@@ -193,26 +197,26 @@ fn handle_key_event(
     }
 }
 
-// Returns true if the key is captured (its press event is dropped from the OS stream).
-//   - See Captured vs Suppressed definition in the comment at the top of this file
+// Returns true if the key press is captured (dropped from the OS stream).
 //
-// Capture key logic:
-//   Insert mode
-//     - KEY_NORMAL_MODE (no modifiers held).
-//   Normal mode
-//     - Move keys: always captured.
-//     - KEY_FAST / KEY_SLOW: captured only while movement or scroll is already active.
-//     - Mouse clicks, grid toggle, jump, KEY_INSERT_MODE, KEY_CYCLE_MONITOR:
-//       captured when no runtime modifiers (KEY_SCROLL / KEY_FAST / KEY_SLOW) are held.
-//     - EXCEPTION: if an uncaptured non-ViMouse key is already held, the whole
-//       chord passes through; ViMouse won't steal a foreign shortcut mid-chord.
-//       - HOWEVER: clicks and scroll-move keys ignore OS modifiers
-//         (Ctrl/Alt/Shift/Meta) when checking for foreign chords, so
-//         ex. Ctrl+click still works (still captured).
-//
-// Runtime modifiers (KEY_SCROLL / KEY_FAST / KEY_SLOW) are suppressed separately
-// from the OS while movement is active (see sync_runtime_modifier_suppression);
-// they are not in captured_keys.
+// Normal mode owns the keyboard: every key is captured by default. The exceptions:
+//   - KEY_NORMAL_MODE is always captured, in both modes, regardless of modifiers.
+//   - Exempt keys (KEYS_EXEMPT + keys rdev can't map) always pass through.
+//   - KEY_TOGGLE_OVERLAY is captured (in both modes) only while no forwarded modifier is held.
+//   - OS modifiers are never captured: idle presses are forwarded to the OS and recorded in
+//     press order; presses during a ViMouse action (any captured key held) are swallowed -
+//     hidden from the OS until physically released.
+//   - Leak mode (any forwarded modifier held): keys pass through so OS chords like Ctrl+C or
+//     Ctrl+Shift+T keep working. Still captured in leak mode:
+//       - Move keys while the oldest forwarded modifier is a movement modifier: Shift+J
+//         scrolls, Alt+J moves slowly. Later-pressed foreign modifiers stay forwarded, so
+//         Shift then Ctrl then J emits Ctrl+scroll.
+//       - KEY_MOUSE_1/2: the synthetic click carries whatever modifiers the OS still sees
+//         (Ctrl+click, Shift+click); movement modifiers are ghosted while moving, so a
+//         mid-move click is a plain click (see sync_movement_modifier_ghosting).
+//       - Mark keys and KEY_UNMARK_ALL while KEY_UNMARK is active (unmark / unmark all,
+//         see unmark_held).
+//   - The quit chord fires in both modes, regardless of modifiers.
 fn handle_key_press(
     shared: &Shared,
     tracker: &std::sync::Mutex<HookTracker>,
@@ -227,7 +231,10 @@ fn handle_key_press(
     update_runtime_modifier_state(&mut state, key, true);
 
     if is_repeat {
-        return tracker.captured_keys.contains(&key);
+        // OS auto-repeats of hidden keys must stay hidden or they would re-assert the key.
+        return tracker.captured_keys.contains(&key)
+            || tracker.swallowed_modifiers.contains(&key)
+            || tracker.ghosted_modifiers.contains(&key);
     }
 
     if quit_chord_active(&tracker.held_keys, key) {
@@ -235,74 +242,27 @@ fn handle_key_press(
         std::process::exit(0);
     }
 
-    let should_capture = if key == KEY_TOGGLE_OVERLAY && no_modifiers_held(&tracker.held_keys) {
+    if is_os_modifier(key) {
+        // Pressed mid-action (any captured key held): swallow until physical release.
+        // Pressed idle: forward to the OS; press order decides move-key ownership later.
+        if state.mode == Mode::Normal && !tracker.captured_keys.is_empty() {
+            tracker.swallowed_modifiers.insert(key);
+            return true;
+        }
+        tracker.forwarded_modifiers.push(key);
+        return false;
+    }
+
+    let should_capture = if key == KEY_NORMAL_MODE {
         true
+    } else if is_exempt_key(key) {
+        false
+    } else if key == KEY_TOGGLE_OVERLAY {
+        tracker.forwarded_modifiers.is_empty()
     } else {
         match state.mode {
-            Mode::Insert => key == KEY_NORMAL_MODE && no_modifiers_held(&tracker.held_keys),
-            Mode::Normal => {
-                #[allow(clippy::if_same_then_else)]
-                // Mark keys (set / jump / unmark single); only suppressed when pressed exclusively
-                if is_mark_key(key) && only_key_held(&tracker.held_keys, key) {
-                    true
-                }
-                // Unmark-all chord: capture the completing key (e.g. BackQuote) so the chord is
-                // suppressed. KEY_UNMARK itself is never captured here, so it stays consistent for
-                // the OS and scroll suppression is untouched.
-                else if unmark_all_chord_active(&tracker.held_keys, key) {
-                    true
-                }
-                // Capture KEY_FAST/KEY_SLOW when scroll/move active, or unconditionally when
-                // configured always-suppressed.
-                else if (key == KEY_FAST || key == KEY_SLOW)
-                    && (always_suppressed_modifier(key)
-                        || tracker.held_keys.contains(&KEY_SCROLL)
-                        || movement_active(&state.pressed_keys))
-                {
-                    true
-                }
-                // Capture mouse keys even when OS modifiers (Ctrl/Alt/Shift/Meta) are held, so the
-                // modifier state is preserved on mouse clicks (allowing Ctrl+clicks, etc.).
-                // MOUSE_3/4/5 pass through when a modifier is held, preserving shortcuts like Cmd+O.
-                else if is_mouse_key(key)
-                    && !has_uncaptured_non_modifier_non_os(&tracker, key)
-                    && (matches!(key, KEY_MOUSE_1 | KEY_MOUSE_2)
-                        || no_os_modifiers_held(&tracker.held_keys))
-                {
-                    true
-                }
-                // Capture move keys mid-scroll so modifier state is preserved on the scroll event
-                // (same rationale as click keys above).
-                else if is_move_key(key)
-                    && scroll_mode_active(&state.pressed_keys)
-                    && !has_uncaptured_non_modifier_non_os(&tracker, key)
-                {
-                    true
-                }
-                // If a non-ViMouse key started the chord, let the rest of that chord pass through.
-                else if has_uncaptured_non_modifier(&tracker, key) {
-                    false
-                }
-                // Always capture move keys (no scroll active); handled above if scroll active.
-                else if is_move_key(key) {
-                    true
-                }
-                // Capture ViMouse action keys, but only when no modifiers are held to avoid
-                // stealing shortcuts like Ctrl+T or Alt+N that other apps use.
-                else if key == KEY_INSERT_MODE
-                    || key == KEY_CYCLE_MONITOR
-                    || key == KEY_TOGGLE_GRID
-                    || key == KEY_TOGGLE_GRID_LETTERS
-                    || is_jump_key(key)
-                    || (key == Key::CapsLock && caps_lock_used_in_config())
-                {
-                    no_modifiers_held(&tracker.held_keys)
-                }
-                // Let all non-ViMouse keys pass through.
-                else {
-                    false
-                }
-            }
+            Mode::Insert => false,
+            Mode::Normal => normal_mode_captures(&tracker, key),
         }
     };
 
@@ -312,18 +272,17 @@ fn handle_key_press(
         // Snapshot UI-visible state before applying the key action so we can detect changes.
         let ui_before = ui_snapshot(&state);
 
-        if key == KEY_TOGGLE_OVERLAY {
+        if key == KEY_NORMAL_MODE {
+            if state.mode == Mode::Insert {
+                enter_normal_mode(&mut state, &tracker.held_keys);
+            }
+        } else if key == KEY_TOGGLE_OVERLAY {
             state.show_overlays = !state.show_overlays;
         } else {
-            match state.mode {
-                Mode::Insert => enter_normal_mode(&mut state, &tracker.held_keys),
-                Mode::Normal => {
-                    if !is_jump_key(key) {
-                        state.pending_subcell = None;
-                    }
-                    apply_normal_mode_press(&mut state, key, &tracker.held_keys);
-                }
+            if !is_jump_key(key) {
+                state.pending_subcell = None;
             }
+            apply_normal_mode_press(&mut state, key, &tracker);
         }
 
         ui_snapshot(&state) != ui_before
@@ -331,15 +290,7 @@ fn handle_key_press(
         false
     };
 
-    // Run unconditionally: a runtime modifier (e.g. KEY_SCROLL) is never "captured", but while
-    // moving it must be hidden from the OS so it doesn't corrupt synthetic events (a held Shift
-    // turns a vertical wheel into a horizontal one). This may start suppressing `key` itself.
-    sync_runtime_modifier_suppression(&state, &mut tracker);
-
-    // Drop the event from the OS stream if captured, OR if this press is the modifier we just
-    // started suppressing - otherwise the real key-down would reach the OS after sync's fake
-    // key-up and re-assert the modifier, making press order (move-then-scroll) misbehave.
-    let drop_from_os = should_capture || tracker.suppressed_modifiers.contains(&key);
+    sync_movement_modifier_ghosting(&state, &mut tracker);
 
     state.motion_needed = true;
     drop(state);
@@ -350,7 +301,37 @@ fn handle_key_press(
         let _ = ui_waker.send_event(());
     }
 
-    drop_from_os
+    should_capture
+}
+
+// Capture decision for a non-modifier, non-exempt key press in Normal mode.
+fn normal_mode_captures(tracker: &HookTracker, key: Key) -> bool {
+    // Runtime modifiers that aren't OS modifiers (e.g. Space) never reach the OS.
+    if is_runtime_modifier(key) {
+        return true;
+    }
+
+    // Movement stays ours while the oldest forwarded modifier is a movement modifier (Shift+J
+    // scrolls, Alt+J moves slowly); a leading foreign modifier means an OS chord like Ctrl+J.
+    if is_move_key(key) {
+        return tracker
+            .forwarded_modifiers
+            .first()
+            .is_none_or(|first| is_runtime_modifier(*first));
+    }
+
+    // Clicks are always ours; forwarded modifiers carry into them (Ctrl+click, Shift+click).
+    if matches!(key, KEY_MOUSE_1 | KEY_MOUSE_2) {
+        return true;
+    }
+
+    if is_mark_key(key) || key == KEY_UNMARK_ALL {
+        return tracker.forwarded_modifiers.is_empty() || unmark_held(tracker);
+    }
+
+    // Everything else - remaining ViMouse actions and unbound keys alike - is captured unless
+    // a forwarded modifier puts us in leak mode.
+    tracker.forwarded_modifiers.is_empty()
 }
 
 fn handle_key_release(
@@ -362,7 +343,12 @@ fn handle_key_release(
     let mut tracker = tracker.lock().expect("hook tracker poisoned");
     tracker.held_keys.remove(&key);
     let was_captured = tracker.captured_keys.remove(&key);
-    let was_suppressed = tracker.suppressed_modifiers.contains(&key);
+    let was_swallowed = tracker.swallowed_modifiers.remove(&key);
+    // A ghosted modifier's release stays hidden: the OS already saw its ghost key-up.
+    let was_ghosted = tracker.ghosted_modifiers.remove(&key);
+    tracker
+        .forwarded_modifiers
+        .retain(|modifier| *modifier != key);
 
     let mut state = shared.lock().expect("shared state poisoned");
     update_runtime_modifier_state(&mut state, key, false);
@@ -391,7 +377,7 @@ fn handle_key_release(
         }
     }
 
-    sync_runtime_modifier_suppression(&state, &mut tracker);
+    sync_movement_modifier_ghosting(&state, &mut tracker);
     drop(state);
     drop(tracker);
 
@@ -399,19 +385,12 @@ fn handle_key_release(
         waker.notify_one();
     }
 
-    was_captured || was_suppressed
+    was_captured || was_swallowed || was_ghosted
 }
 
-fn apply_normal_mode_press(state: &mut SharedState, key: Key, held_keys: &HashSet<Key>) {
-    // Unmark-all takes priority: the chord's completing key may itself be a mark key.
-    if unmark_all_chord_active(held_keys, key) {
-        state.marks.clear();
-        return;
-    }
-
+fn apply_normal_mode_press(state: &mut SharedState, key: Key, tracker: &HookTracker) {
     match key {
         KEY_INSERT_MODE => enter_insert_mode(state),
-        KEY_NORMAL_MODE => {}
         KEY_CYCLE_MONITOR => cycle_monitor(state),
         KEY_MOUSE_1 => press_mouse_button(state, Button::Left),
         KEY_MOUSE_2 => press_mouse_button(state, Button::Right),
@@ -428,7 +407,12 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key, held_keys: &HashSe
                 .or_insert_with(Instant::now);
         }
         _ if is_jump_key(key) => queue_jump(state, key),
-        _ if is_mark_key(key) => apply_mark_press(state, key, held_keys.contains(&KEY_UNMARK)),
+        _ if key == KEY_UNMARK_ALL => {
+            if unmark_held(tracker) {
+                state.marks.clear();
+            }
+        }
+        _ if is_mark_key(key) => apply_mark_press(state, key, unmark_held(tracker)),
         _ => {}
     }
 }
@@ -577,30 +561,32 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
     }
 }
 
-// Hide runtime modifiers from the OS while movement is active (fake key-release, restored by
-// fake key-press on stop) so held modifiers don't alter how apps interpret synthetic events.
-fn sync_runtime_modifier_suppression(state: &SharedState, tracker: &mut HookTracker) {
+// Movement modifiers that double as OS modifiers (e.g. Shift as KEY_SCROLL, Alt as KEY_SLOW)
+// are forwarded to the OS when pressed idle, but must be hidden while ViMouse moves or scrolls:
+// a held Shift turns a vertical synthetic wheel horizontal, and mid-action clicks should not
+// carry them. A ghost key-release hides them when movement starts; a ghost key-press restores
+// them once movement stops. Forwarded foreign modifiers (Ctrl/Meta) are left visible so chords
+// like Ctrl+scroll reach apps intact.
+fn sync_movement_modifier_ghosting(state: &SharedState, tracker: &mut HookTracker) {
     // There are at most 3 runtime modifiers - use a stack array to avoid heap allocation.
     const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
 
     let moving = movement_active(&state.pressed_keys);
 
     for &key in &RUNTIME_MODIFIERS {
-        let want_suppressed = moving && tracker.held_keys.contains(&key);
-        let is_suppressed = tracker.suppressed_modifiers.contains(&key);
+        if !is_os_modifier(key) {
+            continue;
+        }
 
-        if want_suppressed && !is_suppressed {
-            tracker.suppressed_modifiers.insert(key);
-            if !tracker.captured_keys.contains(&key) {
-                tracker.pending_key_events.push((key, false));
-            }
-        } else if !want_suppressed && is_suppressed {
-            tracker.suppressed_modifiers.remove(&key);
-            // Never restore an always-suppressed modifier to the OS.
-            if tracker.held_keys.contains(&key) && !always_suppressed_modifier(key) {
-                tracker.pending_key_events.push((key, true));
-                tracker.captured_keys.remove(&key);
-            }
+        let want_ghosted = moving && tracker.forwarded_modifiers.contains(&key);
+        let is_ghosted = tracker.ghosted_modifiers.contains(&key);
+
+        if want_ghosted && !is_ghosted {
+            tracker.ghosted_modifiers.insert(key);
+            tracker.pending_key_events.push((key, false));
+        } else if !want_ghosted && is_ghosted {
+            tracker.ghosted_modifiers.remove(&key);
+            tracker.pending_key_events.push((key, true));
         }
     }
 }
@@ -896,56 +882,36 @@ fn quit_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
         && held_keys.iter().all(|k| CHORD_QUIT.contains(k))
 }
 
-fn unmark_all_chord_active(held_keys: &HashSet<Key>, current_key: Key) -> bool {
-    CHORD_UNMARK_ALL.contains(&current_key)
-        && CHORD_UNMARK_ALL
-            .iter()
-            .all(|k| held_keys.contains(k) || *k == current_key)
-        && held_keys.iter().all(|k| CHORD_UNMARK_ALL.contains(k))
+// KEY_UNMARK is active, turning mark keys into unmark keys and KEY_UNMARK_ALL into unmark-all.
+// As an OS modifier it must be the sole forwarded one (leak-mode exception); as a regular key
+// it is captured-held like any other ViMouse key. The branch folds away at compile time.
+fn unmark_held(tracker: &HookTracker) -> bool {
+    if is_os_modifier(KEY_UNMARK) {
+        tracker.forwarded_modifiers == [KEY_UNMARK]
+    } else {
+        tracker.captured_keys.contains(&KEY_UNMARK)
+    }
 }
 
-fn no_modifiers_held(keys: &HashSet<Key>) -> bool {
-    !keys.iter().any(|key| is_runtime_modifier(*key))
-}
-
-// True when `key` is the only key held, allowing KEY_SCROLL and KEY_UNMARK as concurrent modifiers
-// (they may share keybinds). Used to gate mark keys so they fire only when pressed exclusively.
-fn only_key_held(keys: &HashSet<Key>, key: Key) -> bool {
-    keys.iter()
-        .all(|held| *held == key || *held == KEY_SCROLL || *held == KEY_UNMARK)
-}
-
-fn has_uncaptured_non_modifier(tracker: &HookTracker, key: Key) -> bool {
-    tracker.held_keys.iter().any(|held_key| {
-        *held_key != key
-            && !is_runtime_modifier(*held_key)
-            && *held_key != Key::CapsLock
-            && !tracker.captured_keys.contains(held_key)
-    })
-}
-
-fn has_uncaptured_non_modifier_non_os(tracker: &HookTracker, key: Key) -> bool {
-    tracker.held_keys.iter().any(|held_key| {
-        *held_key != key
-            && !is_runtime_modifier(*held_key)
-            && !is_os_modifier(*held_key)
-            && *held_key != Key::CapsLock
-            && !tracker.captured_keys.contains(held_key)
-    })
-}
-
+// AltGr is deliberately not an OS modifier so it stays bindable (KEY_TOGGLE_OVERLAY).
 fn is_os_modifier(key: Key) -> bool {
     matches!(
         key,
         Key::ControlLeft
             | Key::ControlRight
             | Key::Alt
-            | Key::AltGr
             | Key::ShiftLeft
             | Key::ShiftRight
             | Key::MetaLeft
             | Key::MetaRight
     )
+}
+
+fn is_exempt_key(key: Key) -> bool {
+    static EXEMPT_KEYS: std::sync::OnceLock<HashSet<Key>> = std::sync::OnceLock::new();
+    let set = EXEMPT_KEYS.get_or_init(|| KEYS_EXEMPT.iter().copied().collect());
+    // Keys rdev can't map (media/volume keys and the like) can't be acted on - let them through.
+    matches!(key, Key::Unknown(_) | Key::Function) || set.contains(&key)
 }
 
 fn scroll_mode_active(keys: &HashSet<Key>) -> bool {
@@ -967,10 +933,6 @@ fn is_mouse_key(key: Key) -> bool {
     )
 }
 
-fn no_os_modifiers_held(keys: &HashSet<Key>) -> bool {
-    !keys.iter().any(|key| is_os_modifier(*key))
-}
-
 fn is_jump_key(key: Key) -> bool {
     static JUMP_KEYS: std::sync::OnceLock<HashSet<Key>> = std::sync::OnceLock::new();
     let set = JUMP_KEYS.get_or_init(|| JUMP_GRID.iter().flatten().copied().collect());
@@ -985,10 +947,6 @@ fn is_mark_key(key: Key) -> bool {
 
 fn is_runtime_modifier(key: Key) -> bool {
     key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
-}
-
-fn always_suppressed_modifier(key: Key) -> bool {
-    (key == KEY_FAST && KEY_FAST_SUPPRESS) || (key == KEY_SLOW && KEY_SLOW_SUPPRESS)
 }
 
 /// Captures the subset of SharedState that drives overlay rendering.

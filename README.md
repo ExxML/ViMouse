@@ -136,7 +136,7 @@ Marks are custom cursor positions you set and jump back to, like Vim marks. A la
 - Press a number key `0`-`9` to set a mark at the current cursor position.
 - Press that same key again to jump the cursor to the marked position.
 - Hold `Left Shift` and press a mark key to remove that mark.
-- Press `Left Shift` + `` ` `` to remove all marks.
+- Hold `Left Shift` + `` ` `` to remove all marks.
 
 ---
 
