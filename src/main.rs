@@ -10,6 +10,7 @@ mod caps_lock_remap;
 #[cfg(not(target_os = "macos"))]
 mod caps_lock_suppress;
 mod config;
+mod cursor_visibility;
 mod input;
 mod monitor;
 mod overlay;
@@ -285,10 +286,14 @@ fn main() {
     })
     .expect("failed to set Ctrl+C handler");
 
-    #[cfg(target_os = "macos")]
+    // Restore any global state we mutate (hidden cursor, macOS caps-lock remap) on panic, so an
+    // unwinding crash never leaves the user without a cursor. Hard kills can't be caught here, but
+    // the cursor hide is connection-scoped on macOS/Linux and the OS restores it on process death.
     {
         let default_panic = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
+            crate::cursor_visibility::set_cursor_hidden(false);
+            #[cfg(target_os = "macos")]
             crate::caps_lock_remap::shutdown();
             default_panic(info);
         }));

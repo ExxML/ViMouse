@@ -67,6 +67,8 @@ pub fn set_caps_lock_remap(enabled: bool) {
 }
 
 pub fn shutdown_platform_input() {
+    // Restore the cursor if it was hidden in Insert mode
+    crate::cursor_visibility::set_cursor_hidden(false);
     #[cfg(target_os = "macos")]
     macos_grab::shutdown();
 }

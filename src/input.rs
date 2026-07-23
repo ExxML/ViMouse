@@ -1,11 +1,11 @@
 use crate::config::{
     ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
-    FAST_MULTIPLIER, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK, KEY_CYCLE_MONITOR,
-    KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5,
-    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SCROLL,
-    KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_OVERLAY, KEY_UNMARK,
-    KEY_UNMARK_ALL, SCROLL_ACCELERATION, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER,
-    TICK_RATE_HZ,
+    FAST_MULTIPLIER, INSERT_MODE_HIDE_CURSOR, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK,
+    KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3,
+    KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
+    KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
+    KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -243,9 +243,14 @@ fn handle_key_press(
     }
 
     if is_os_modifier(key) {
-        // Pressed mid-action (any captured key held): swallow until physical release.
-        // Pressed idle: forward to the OS; press order decides move-key ownership later.
-        if state.mode == Mode::Normal && !tracker.captured_keys.is_empty() {
+        // A runtime modifier (Shift/Alt) pressed mid-action is swallowed so it can't corrupt a
+        // synthetic scroll/click; ghosting restores it separately while moving. A foreign
+        // modifier (Ctrl/Meta) always forwards into leak mode so OS chords formed after a
+        // ViMouse key is held - e.g. hold J, then Cmd+C - still reach the OS intact.
+        if state.mode == Mode::Normal
+            && !tracker.captured_keys.is_empty()
+            && is_runtime_modifier(key)
+        {
             tracker.swallowed_modifiers.insert(key);
             return true;
         }
@@ -438,10 +443,16 @@ fn enter_insert_mode(state: &mut SharedState) {
     state.pressed_keys.clear();
     state.move_key_pressed_at.clear();
     release_all_buttons(state);
+    if INSERT_MODE_HIDE_CURSOR {
+        crate::cursor_visibility::set_cursor_hidden(true);
+    }
 }
 
 fn enter_normal_mode(state: &mut SharedState, held_keys: &HashSet<Key>) {
     state.mode = Mode::Normal;
+    if INSERT_MODE_HIDE_CURSOR {
+        crate::cursor_visibility::set_cursor_hidden(false);
+    }
     state.pressed_keys.clear();
     state.move_key_pressed_at.clear();
 

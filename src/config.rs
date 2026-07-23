@@ -38,6 +38,7 @@ pub const SCROLL_MAX_SPEED: f64 = f64::INFINITY; // scroll units/sec ceiling whe
 // Mode switching
 pub const KEY_INSERT_MODE: Key = Key::KeyI; // Only works in Normal mode
 pub const KEY_NORMAL_MODE: Key = Key::CapsLock; // Only works in Insert mode
+pub const INSERT_MODE_HIDE_CURSOR: bool = false; // Hide the mouse cursor in Insert mode (restored in Normal mode)
 
 // Cursor movement keys
 pub const KEY_MOVE_LEFT: Key = Key::KeyH;
