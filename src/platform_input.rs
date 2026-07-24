@@ -16,11 +16,14 @@ use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL,
-    MOUSEINPUT, VK_LBUTTON, VK_RBUTTON,
+    GetAsyncKeyState, SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEINPUT, VK_LBUTTON,
+    VK_RBUTTON,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+};
 #[cfg(target_os = "linux")]
 use x11_dl::xlib::Xlib;
 
@@ -593,9 +596,28 @@ impl PlatformEmitter {
         const WHEEL_DELTA: f64 = 120.0;
 
         match action {
+            // A real MOUSEEVENTF_MOVE event, not SetCursorPos: SetCursorPos only warps the cursor
+            // position and injects no move into the input stream, so apps driven by mouse-move
+            // messages (drag-select overlays like Snipping Tool, hover crosshairs) never update.
             Action::MouseMove(point) => unsafe {
-                if SetCursorPos(clamp_f64_to_i32(point.x), clamp_f64_to_i32(point.y)) == 0 {
-                    Err("SetCursorPos failed".to_string())
+                let (dx, dy) = virtual_desktop_absolute(point.x, point.y);
+                let input = INPUT {
+                    r#type: INPUT_MOUSE,
+                    Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                        mi: MOUSEINPUT {
+                            dx,
+                            dy,
+                            mouseData: 0,
+                            dwFlags: MOUSEEVENTF_MOVE
+                                | MOUSEEVENTF_ABSOLUTE
+                                | MOUSEEVENTF_VIRTUALDESK,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                };
+                if SendInput(1, &input, std::mem::size_of::<INPUT>() as i32) != 1 {
+                    Err("SendInput move failed".to_string())
                 } else {
                     Ok(())
                 }
@@ -644,6 +666,27 @@ impl PlatformEmitter {
             },
             _ => simulate_input(&action_to_event_type(action)),
         }
+    }
+}
+
+/// Maps a physical-pixel virtual-desktop point to the normalized 0..=65535 coordinates that
+/// MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK expect. Dividing by (dimension - 1) lands the
+/// far edge exactly on 65535 rather than one pixel short.
+#[cfg(target_os = "windows")]
+fn virtual_desktop_absolute(x: f64, y: f64) -> (i32, i32) {
+    unsafe {
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(1);
+        let norm = |value: i32, origin: i32, extent: i32| {
+            let span = (extent - 1).max(1) as f64;
+            (((value - origin) as f64 * 65535.0 / span).round() as i32).clamp(0, 65535)
+        };
+        (
+            norm(clamp_f64_to_i32(x), left, width),
+            norm(clamp_f64_to_i32(y), top, height),
+        )
     }
 }
 
