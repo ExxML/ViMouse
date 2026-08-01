@@ -156,6 +156,11 @@ fn handle_hook_event(
         }
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
+            if state.emitted_cursor.is_some_and(|emitted| {
+                emitted.x.round() == x.round() && emitted.y.round() == y.round()
+            }) {
+                return Some(event);
+            }
             let prev_monitor = state.selected_monitor;
             update_cursor(&mut state, Point { x, y });
             let monitor_changed = state.selected_monitor != prev_monitor;
@@ -604,6 +609,11 @@ fn sync_movement_modifier_ghosting(state: &SharedState, tracker: &mut HookTracke
 
 fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Vec<Action>) {
     let mut state = shared.lock().expect("shared state poisoned");
+    accumulate_actions(&mut state, delta_seconds, actions);
+    record_emitted_cursor(&mut state, actions);
+}
+
+fn accumulate_actions(state: &mut SharedState, delta_seconds: f64, actions: &mut Vec<Action>) {
     // The hook thread only mutates state; all synthetic mouse output is emitted here so
     // cursor movement, clicks, and scrolling stay serialized and predictable.
     actions.append(&mut state.pending_actions);
@@ -625,10 +635,10 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
     }
 
     let now = Instant::now();
-    let elapsed_h = key_elapsed(&state, KEY_MOVE_LEFT, now);
-    let elapsed_j = key_elapsed(&state, KEY_MOVE_DOWN, now);
-    let elapsed_k = key_elapsed(&state, KEY_MOVE_UP, now);
-    let elapsed_l = key_elapsed(&state, KEY_MOVE_RIGHT, now);
+    let elapsed_h = key_elapsed(state, KEY_MOVE_LEFT, now);
+    let elapsed_j = key_elapsed(state, KEY_MOVE_DOWN, now);
+    let elapsed_k = key_elapsed(state, KEY_MOVE_UP, now);
+    let elapsed_l = key_elapsed(state, KEY_MOVE_RIGHT, now);
     // Per-axis elapsed: oldest held key wins so both directions in a diagonal accelerate independently.
     let elapsed_x = elapsed_h.max(elapsed_l);
     let elapsed_y = elapsed_j.max(elapsed_k);
@@ -686,6 +696,16 @@ fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Ve
             state.selected_monitor = index;
             actions.push(Action::MouseMove(state.cursor));
         }
+    }
+}
+
+// Remember the last move we are about to emit, so the hook can recognize its echo.
+fn record_emitted_cursor(state: &mut SharedState, actions: &[Action]) {
+    if let Some(Action::MouseMove(point)) = actions
+        .iter()
+        .rfind(|action| matches!(action, Action::MouseMove(_)))
+    {
+        state.emitted_cursor = Some(*point);
     }
 }
 

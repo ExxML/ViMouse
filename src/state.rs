@@ -79,6 +79,7 @@ pub struct SharedState {
     pub move_key_pressed_at: HashMap<Key, Instant>,
     pub pending_subcell: Option<(u8, u8, Instant)>, // Pending subcell state: (cell_col, cell_row, timestamp of first jump)
     pub marks: HashMap<Key, Point>, // Mark key -> cursor position in virtual-desktop coords
+    pub emitted_cursor: Option<Point>,
 }
 
 impl SharedState {
@@ -99,6 +100,7 @@ impl SharedState {
             move_key_pressed_at: HashMap::new(),
             pending_subcell: None,
             marks: HashMap::new(),
+            emitted_cursor: None,
         }
     }
 }
