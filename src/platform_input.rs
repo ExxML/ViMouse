@@ -894,13 +894,12 @@ impl PlatformEmitter {
     }
 }
 
-/// Combined modifier flags of the runtime modifier keys (KEY_SCROLL / KEY_FAST / KEY_SLOW),
+/// Combined modifier flags of the runtime modifier keys (KEYS_SCROLL / KEY_FAST / KEY_SLOW),
 /// so synthetic scrolls can shed the flags those held keys would otherwise stamp on them.
 #[cfg(target_os = "macos")]
 fn runtime_modifier_flags() -> CGEventFlags {
-    use crate::config::{KEY_FAST, KEY_SCROLL, KEY_SLOW};
     let mut flags = CGEventFlags::CGEventFlagNull;
-    for key in [KEY_SCROLL, KEY_FAST, KEY_SLOW] {
+    for key in crate::input::runtime_modifiers() {
         flags |= match key {
             rdev::Key::ShiftLeft | rdev::Key::ShiftRight => CGEventFlags::CGEventFlagShift,
             rdev::Key::Alt | rdev::Key::AltGr => CGEventFlags::CGEventFlagAlternate,

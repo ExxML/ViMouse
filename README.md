@@ -84,7 +84,7 @@ For example:
 
 ### Scrolling
 
-Hold `Left Shift` + `H` / `J` / `K` / `L` to scroll.
+Hold `Left/Right Shift` + `H` / `J` / `K` / `L` to scroll.
 
 Scrolling features the same `Space` / `Left Alt` speed modifiers as [Cursor Movement](#cursor-movement).
 

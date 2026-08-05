@@ -52,7 +52,8 @@ pub const KEY_MOUSE_2: Key = Key::Quote; // Right click
 pub const KEY_MOUSE_3: Key = Key::KeyM; // Middle (scroll) click
 pub const KEY_MOUSE_4: Key = Key::KeyO; // Back (X1) click
 pub const KEY_MOUSE_5: Key = Key::KeyP; // Forward (X2) click
-pub const KEY_SCROLL: Key = Key::ShiftLeft;
+// Hold any KEYS_SCROLL and press a KEY_MOVE to scroll
+pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight];
 
 // Speed modifier keys for cursor movement and scrolling
 pub const KEY_FAST: Key = Key::Space;

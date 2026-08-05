@@ -1,9 +1,9 @@
 use crate::config::{
     ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
     FAST_MULTIPLIER, INSERT_MODE_HIDE_CURSOR, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK,
-    KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3,
-    KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP,
-    KEY_NORMAL_MODE, KEY_SCROLL, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
+    KEYS_SCROLL, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2,
+    KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT,
+    KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
     KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION, SCROLL_BASE_SPEED,
     SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
@@ -577,19 +577,16 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
     }
 }
 
-// Movement modifiers that double as OS modifiers (e.g. Shift as KEY_SCROLL, Alt as KEY_SLOW)
+// Movement modifiers that double as OS modifiers (e.g. Shift as a scroll key, Alt as KEY_SLOW)
 // are forwarded to the OS when pressed idle, but must be hidden while ViMouse moves or scrolls:
 // a held Shift turns a vertical synthetic wheel horizontal, and mid-action clicks should not
 // carry them. A ghost key-release hides them when movement starts; a ghost key-press restores
 // them once movement stops. Forwarded foreign modifiers (Ctrl/Meta) are left visible so chords
 // like Ctrl+scroll reach apps intact.
 fn sync_movement_modifier_ghosting(state: &SharedState, tracker: &mut HookTracker) {
-    // There are at most 3 runtime modifiers - use a stack array to avoid heap allocation.
-    const RUNTIME_MODIFIERS: [Key; 3] = [KEY_SCROLL, KEY_FAST, KEY_SLOW];
-
     let moving = movement_active(&state.pressed_keys);
 
-    for &key in &RUNTIME_MODIFIERS {
+    for key in runtime_modifiers() {
         if !is_os_modifier(key) {
             continue;
         }
@@ -946,7 +943,7 @@ fn is_exempt_key(key: Key) -> bool {
 }
 
 fn scroll_mode_active(keys: &HashSet<Key>) -> bool {
-    keys.contains(&KEY_SCROLL)
+    KEYS_SCROLL.iter().any(|key| keys.contains(key))
 }
 
 fn movement_active(keys: &HashSet<Key>) -> bool {
@@ -977,7 +974,11 @@ fn is_mark_key(key: Key) -> bool {
 }
 
 fn is_runtime_modifier(key: Key) -> bool {
-    key == KEY_SCROLL || key == KEY_FAST || key == KEY_SLOW
+    runtime_modifiers().any(|modifier| modifier == key)
+}
+
+pub fn runtime_modifiers() -> impl Iterator<Item = Key> {
+    KEYS_SCROLL.iter().copied().chain([KEY_FAST, KEY_SLOW])
 }
 
 /// Captures the subset of SharedState that drives overlay rendering.
@@ -1011,7 +1012,6 @@ pub fn caps_lock_used_in_config() -> bool {
         [
             KEY_NORMAL_MODE,
             KEY_INSERT_MODE,
-            KEY_SCROLL,
             KEY_FAST,
             KEY_SLOW,
             KEY_MOUSE_1,
@@ -1028,6 +1028,7 @@ pub fn caps_lock_used_in_config() -> bool {
             KEY_MOVE_RIGHT,
         ]
         .contains(&Key::CapsLock)
+            || KEYS_SCROLL.contains(&Key::CapsLock)
             || CHORD_QUIT.contains(&Key::CapsLock)
             || JUMP_GRID.iter().flatten().any(|k| *k == Key::CapsLock)
     })
