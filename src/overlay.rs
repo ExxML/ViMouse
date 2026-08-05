@@ -35,6 +35,9 @@ fn raise_overlay_window_level(window: &winit::window::Window) {
     const CAN_JOIN_ALL_SPACES: u64 = 1 << 0;
     const FULL_SCREEN_AUXILIARY: u64 = 1 << 8;
     const STATIONARY: u64 = 1 << 4;
+    // NSWindowAnimationBehaviorNone: the auxiliary collection behavior otherwise lets AppKit
+    // infer a window-open/close animation on every order-front/order-out.
+    const ANIMATION_BEHAVIOR_NONE: i64 = 2;
     unsafe {
         use objc::runtime::Object;
         use winit::platform::macos::WindowExtMacOS;
@@ -45,5 +48,6 @@ fn raise_overlay_window_level(window: &winit::window::Window) {
             ns_window,
             setCollectionBehavior: CAN_JOIN_ALL_SPACES | FULL_SCREEN_AUXILIARY | STATIONARY
         ];
+        let _: () = msg_send![ns_window, setAnimationBehavior: ANIMATION_BEHAVIOR_NONE];
     }
 }
