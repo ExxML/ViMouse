@@ -4,9 +4,9 @@
 // each overlay owns the "where" part.
 
 use crate::config::{
-    OVERLAY_LETTER_ALPHA, OVERLAY_LETTER_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_ALPHA,
-    OVERLAY_LETTER_OUTLINE_BRIGHTNESS, OVERLAY_LETTER_OUTLINE_THICKNESS,
-    OVERLAY_LETTER_SIZE_MONITOR_FRACTION,
+    LETTER_OVERLAY_ALPHA, LETTER_OVERLAY_BRIGHTNESS, LETTER_OVERLAY_OUTLINE_ALPHA,
+    LETTER_OVERLAY_OUTLINE_BRIGHTNESS, LETTER_OVERLAY_OUTLINE_THICKNESS,
+    LETTER_OVERLAY_SIZE_MONITOR_FRACTION,
 };
 use font8x8::{UnicodeFonts, BASIC_FONTS};
 use rdev::Key;
@@ -57,7 +57,7 @@ pub fn key_label(key: Key) -> Option<char> {
 // Glyph scale multiplier for a surface of (w, h) physical pixels. The glyph is 8*s px tall,
 // so s tracks the smaller dimension of the surface's monitor.
 fn letter_scale(w: usize, h: usize) -> usize {
-    let target = w.min(h) as f64 * OVERLAY_LETTER_SIZE_MONITOR_FRACTION;
+    let target = w.min(h) as f64 * LETTER_OVERLAY_SIZE_MONITOR_FRACTION;
     (target / 8.0).round().max(1.0) as usize
 }
 
@@ -72,7 +72,7 @@ pub fn glyph_px_lit(glyph: [u8; 8], s: isize, gx: isize, gy: isize) -> bool {
 
 // True if (gx, gy) is an outline pixel: not lit itself, but within OUTLINE_THICKNESS px of a lit pixel.
 pub fn glyph_px_outline(glyph: [u8; 8], s: isize, gx: isize, gy: isize) -> bool {
-    let t = OVERLAY_LETTER_OUTLINE_THICKNESS as isize;
+    let t = LETTER_OVERLAY_OUTLINE_THICKNESS as isize;
     if t == 0 || glyph_px_lit(glyph, s, gx, gy) {
         return false;
     }
@@ -93,14 +93,14 @@ pub fn blit_label_bgra_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
-    let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((OVERLAY_LETTER_ALPHA as u32) << 24);
+    let pm = (LETTER_OVERLAY_BRIGHTNESS as u32 * LETTER_OVERLAY_ALPHA as u32) / 255;
+    let pixel: u32 = pm | (pm << 8) | (pm << 16) | ((LETTER_OVERLAY_ALPHA as u32) << 24);
     let opm =
-        (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
+        (LETTER_OVERLAY_OUTLINE_BRIGHTNESS as u32 * LETTER_OVERLAY_OUTLINE_ALPHA as u32) / 255;
     let outline: u32 =
-        opm | (opm << 8) | (opm << 16) | ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24);
+        opm | (opm << 8) | (opm << 16) | ((LETTER_OVERLAY_OUTLINE_ALPHA as u32) << 24);
     let s = letter_scale(w, h);
-    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let t = LETTER_OVERLAY_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);
     for gy in 0..8 * s + 2 * t {
@@ -128,20 +128,20 @@ pub fn blit_label_bgra_u8(pixels: &mut [u8], w: usize, h: usize, cx: usize, cy: 
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32 / 255) as u8;
-    let opm = (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32 / 255)
+    let pm = (LETTER_OVERLAY_BRIGHTNESS as u32 * LETTER_OVERLAY_ALPHA as u32 / 255) as u8;
+    let opm = (LETTER_OVERLAY_OUTLINE_BRIGHTNESS as u32 * LETTER_OVERLAY_OUTLINE_ALPHA as u32 / 255)
         as u8;
     let s = letter_scale(w, h);
-    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let t = LETTER_OVERLAY_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);
     for gy in 0..8 * s + 2 * t {
         for gx in 0..8 * s + 2 * t {
             let (bx, by) = (gx as isize - t as isize, gy as isize - t as isize);
             let (g, a) = if glyph_px_lit(glyph, s as isize, bx, by) {
-                (pm, OVERLAY_LETTER_ALPHA)
+                (pm, LETTER_OVERLAY_ALPHA)
             } else if glyph_px_outline(glyph, s as isize, bx, by) {
-                (opm, OVERLAY_LETTER_OUTLINE_ALPHA)
+                (opm, LETTER_OVERLAY_OUTLINE_ALPHA)
             } else {
                 continue;
             };
@@ -164,14 +164,14 @@ pub fn blit_label_argb_u32(pixels: &mut [u32], w: usize, h: usize, cx: usize, cy
     let Some(glyph) = BASIC_FONTS.get(ch) else {
         return;
     };
-    let pm = (OVERLAY_LETTER_BRIGHTNESS as u32 * OVERLAY_LETTER_ALPHA as u32) / 255;
-    let pixel: u32 = ((OVERLAY_LETTER_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
+    let pm = (LETTER_OVERLAY_BRIGHTNESS as u32 * LETTER_OVERLAY_ALPHA as u32) / 255;
+    let pixel: u32 = ((LETTER_OVERLAY_ALPHA as u32) << 24) | (pm << 16) | (pm << 8) | pm;
     let opm =
-        (OVERLAY_LETTER_OUTLINE_BRIGHTNESS as u32 * OVERLAY_LETTER_OUTLINE_ALPHA as u32) / 255;
+        (LETTER_OVERLAY_OUTLINE_BRIGHTNESS as u32 * LETTER_OVERLAY_OUTLINE_ALPHA as u32) / 255;
     let outline: u32 =
-        ((OVERLAY_LETTER_OUTLINE_ALPHA as u32) << 24) | (opm << 16) | (opm << 8) | opm;
+        ((LETTER_OVERLAY_OUTLINE_ALPHA as u32) << 24) | (opm << 16) | (opm << 8) | opm;
     let s = letter_scale(w, h);
-    let t = OVERLAY_LETTER_OUTLINE_THICKNESS;
+    let t = LETTER_OVERLAY_OUTLINE_THICKNESS;
     let ox = cx.saturating_sub(4 * s + t);
     let oy = cy.saturating_sub(4 * s + t);
     for gy in 0..8 * s + 2 * t {

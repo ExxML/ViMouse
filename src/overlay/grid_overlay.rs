@@ -1,16 +1,16 @@
 // Grid overlay layout. Renders the 5×3 jump grid (lines and/or cell letters) onto a
-// shared OverlaySurface. The "how to draw a glyph" and "how to composite the buffer"
-// concerns live in overlay_glyph and overlay_surface respectively; this file only knows
+// shared SurfaceOverlay. The "how to draw a glyph" and "how to composite the buffer"
+// concerns live in glyph_overlay and surface_overlay respectively; this file only knows
 // where the grid lines and cell letters go.
 
 #[cfg(target_os = "linux")]
-use super::overlay_glyph::blit_label_argb_u32;
+use super::glyph_overlay::blit_label_argb_u32;
 #[cfg(target_os = "windows")]
-use super::overlay_glyph::blit_label_bgra_u32;
+use super::glyph_overlay::blit_label_bgra_u32;
 #[cfg(target_os = "macos")]
-use super::overlay_glyph::blit_label_bgra_u8;
-use super::overlay_glyph::key_label;
-use super::overlay_surface::OverlaySurface;
+use super::glyph_overlay::blit_label_bgra_u8;
+use super::glyph_overlay::key_label;
+use super::surface_overlay::SurfaceOverlay;
 use crate::config::{GRID_ALPHA, GRID_BRIGHTNESS, GRID_THICKNESS, JUMP_GRID};
 use crate::state::MonitorInfo;
 use winit::window::Window;
@@ -26,13 +26,13 @@ pub struct GridOverlayState {
 }
 
 pub struct GridSurface {
-    surface: OverlaySurface,
+    surface: SurfaceOverlay,
 }
 
 impl GridSurface {
     pub fn new(_window: &Window, _initial_monitor: &MonitorInfo) -> Self {
         Self {
-            surface: OverlaySurface::new(),
+            surface: SurfaceOverlay::new(),
         }
     }
 

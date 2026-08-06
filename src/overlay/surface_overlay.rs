@@ -1,4 +1,4 @@
-// Generic fullscreen transparent overlay surface, shared by the grid overlay and the
+// Generic fullscreen transparent surface overlay, shared by the grid overlay and the
 // mark overlay. It owns an always-on-top, click-through, monitor-sized window and the
 // per-platform CPU-buffer compositing (Windows UpdateLayeredWindow, macOS CALayer
 // contents, Linux XRender). The caller supplies a "fill" closure that writes the
@@ -54,13 +54,13 @@ pub type FillBuf = u32;
 pub type FillBuf = u8;
 
 // Per-platform pixel-buffer element type passed to fill closures.
-pub struct OverlaySurface {
-    imp: Option<OverlaySurfaceImp>,
+pub struct SurfaceOverlay {
+    imp: Option<SurfaceOverlayImp>,
     // Last monitor the window was sized/positioned for; None before first show.
     positioned_monitor: Option<MonitorInfo>,
 }
 
-impl OverlaySurface {
+impl SurfaceOverlay {
     pub fn new() -> Self {
         Self {
             imp: None,
@@ -81,28 +81,28 @@ impl OverlaySurface {
         fill: impl FnOnce(&mut [FillBuf], usize, usize),
     ) {
         if !visible {
-            hide_overlay_window(window);
+            hide_window_overlay(window);
             return;
         }
         let (w, h) = monitor_size_physical(monitor);
         if self.imp.is_none() {
-            self.imp = Some(OverlaySurfaceImp::new(w, h));
+            self.imp = Some(SurfaceOverlayImp::new(w, h));
         }
         // Skip redundant OS resize/reposition calls when the monitor hasn't changed.
         if self.positioned_monitor != Some(*monitor) {
-            set_overlay_window_size(window, monitor, w, h);
-            position_overlay_window(window, monitor);
+            set_window_overlay_size(window, monitor, w, h);
+            position_window_overlay(window, monitor);
             self.positioned_monitor = Some(*monitor);
         }
         self.imp
             .as_mut()
             .unwrap()
             .paint(window, w, h, version, fill);
-        show_overlay_window(window);
+        show_window_overlay(window);
     }
 }
 
-impl Default for OverlaySurface {
+impl Default for SurfaceOverlay {
     fn default() -> Self {
         Self::new()
     }
@@ -111,7 +111,7 @@ impl Default for OverlaySurface {
 // ── Windows implementation ───────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-struct OverlaySurfaceImp {
+struct SurfaceOverlayImp {
     // Pre-computed BGRA pixel cache. Empty until first paint; rebuilt on size or version change.
     pixel_cache: Vec<u32>,
     texture_size: (u32, u32),
@@ -120,7 +120,7 @@ struct OverlaySurfaceImp {
 }
 
 #[cfg(target_os = "windows")]
-impl OverlaySurfaceImp {
+impl SurfaceOverlayImp {
     fn new(_w: u32, _h: u32) -> Self {
         Self {
             pixel_cache: Vec::new(),
@@ -230,7 +230,7 @@ impl OverlaySurfaceImp {
 // ── macOS implementation (Core Graphics + CALayer, CPU pixel buffer) ─────────
 
 #[cfg(target_os = "macos")]
-struct OverlaySurfaceImp {
+struct SurfaceOverlayImp {
     pixel_cache: Vec<u8>,
     texture_size: (u32, u32),
     cached_version: u64,
@@ -238,7 +238,7 @@ struct OverlaySurfaceImp {
 }
 
 #[cfg(target_os = "macos")]
-impl OverlaySurfaceImp {
+impl SurfaceOverlayImp {
     fn new(_w: u32, _h: u32) -> Self {
         Self {
             pixel_cache: Vec::new(),
@@ -305,7 +305,7 @@ impl OverlaySurfaceImp {
 // ── Linux implementation (XRender ARGB32 pixmap, CPU pixel buffer) ───────────
 
 #[cfg(target_os = "linux")]
-struct OverlaySurfaceImp {
+struct SurfaceOverlayImp {
     pixel_cache: Vec<u32>,
     texture_size: (u32, u32),
     cached_version: u64,
@@ -314,7 +314,7 @@ struct OverlaySurfaceImp {
 }
 
 #[cfg(target_os = "linux")]
-impl OverlaySurfaceImp {
+impl SurfaceOverlayImp {
     fn new(_w: u32, _h: u32) -> Self {
         Self {
             pixel_cache: Vec::new(),
@@ -461,7 +461,7 @@ impl OverlaySurfaceImp {
 
 // Owned windows are never shown in the taskbar by Windows, unlike ITaskbarList which requires the shell.
 #[cfg(target_os = "windows")]
-pub fn create_overlay_owner_hwnd() -> HWND {
+pub fn create_window_overlay_owner_hwnd() -> HWND {
     unsafe {
         CreateWindowExW(
             WS_EX_TOOLWINDOW,
@@ -540,7 +540,7 @@ pub fn create_topmost_anchor(_event_loop: &EventLoop<()>, _monitor: &MonitorInfo
 
 #[cfg(not(target_os = "windows"))]
 pub fn create_topmost_anchor(event_loop: &EventLoop<()>, monitor: &MonitorInfo) -> TopmostAnchor {
-    // Built like a normal overlay window (transparent, always-on-top, click-through), then sized to
+    // Built like a normal window overlay (transparent, always-on-top, click-through), then sized to
     // the primary monitor and left permanently visible so it always occupies the topmost band.
     let builder = WindowBuilder::new()
         .with_title("ViMouse Anchor")
@@ -551,20 +551,20 @@ pub fn create_topmost_anchor(event_loop: &EventLoop<()>, monitor: &MonitorInfo) 
         .with_transparent(true)
         .with_window_level(WindowLevel::AlwaysOnTop)
         .with_inner_size(PhysicalSize::new(1u32, 1u32));
-    let builder = configure_overlay_window_builder(builder);
+    let builder = configure_window_overlay_builder(builder);
     let window = builder
         .build(event_loop)
         .expect("failed to create topmost anchor window");
-    configure_overlay_surface_window(&window);
+    configure_surface_overlay_window(&window);
     let (w, h) = monitor_size_physical(monitor);
-    set_overlay_window_size(&window, monitor, w, h);
-    position_overlay_window(&window, monitor);
+    set_window_overlay_size(&window, monitor, w, h);
+    position_window_overlay(&window, monitor);
     window.set_visible(true);
     TopmostAnchor { _window: window }
 }
 
 #[cfg(target_os = "windows")]
-pub fn create_overlay_window(event_loop: &EventLoop<()>, owner: HWND) -> Window {
+pub fn create_window_overlay(event_loop: &EventLoop<()>, owner: HWND) -> Window {
     let builder = WindowBuilder::new()
         .with_title("ViMouse Overlay")
         .with_decorations(false)
@@ -575,16 +575,16 @@ pub fn create_overlay_window(event_loop: &EventLoop<()>, owner: HWND) -> Window 
         .with_window_level(WindowLevel::AlwaysOnTop)
         .with_inner_size(PhysicalSize::new(1u32, 1u32));
 
-    let builder = configure_overlay_window_builder(builder, owner);
+    let builder = configure_window_overlay_builder(builder, owner);
     let window = builder
         .build(event_loop)
-        .expect("failed to create overlay window");
-    configure_overlay_surface_window(&window);
+        .expect("failed to create window overlay");
+    configure_surface_overlay_window(&window);
     window
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_overlay_window(event_loop: &EventLoop<()>) -> Window {
+pub fn create_window_overlay(event_loop: &EventLoop<()>) -> Window {
     let builder = WindowBuilder::new()
         .with_title("ViMouse Overlay")
         .with_decorations(false)
@@ -595,44 +595,44 @@ pub fn create_overlay_window(event_loop: &EventLoop<()>) -> Window {
         .with_window_level(WindowLevel::AlwaysOnTop)
         .with_inner_size(PhysicalSize::new(1u32, 1u32));
 
-    let builder = configure_overlay_window_builder(builder);
+    let builder = configure_window_overlay_builder(builder);
     let window = builder
         .build(event_loop)
-        .expect("failed to create overlay window");
-    configure_overlay_surface_window(&window);
+        .expect("failed to create window overlay");
+    configure_surface_overlay_window(&window);
     window
 }
 
 #[cfg(target_os = "macos")]
-fn configure_overlay_window_builder(builder: WindowBuilder) -> WindowBuilder {
+fn configure_window_overlay_builder(builder: WindowBuilder) -> WindowBuilder {
     builder.with_has_shadow(false)
 }
 
 #[cfg(target_os = "windows")]
-fn configure_overlay_window_builder(builder: WindowBuilder, owner: HWND) -> WindowBuilder {
+fn configure_window_overlay_builder(builder: WindowBuilder, owner: HWND) -> WindowBuilder {
     builder
         .with_skip_taskbar(true)
         .with_owner_window(owner as isize)
 }
 
 #[cfg(target_os = "linux")]
-fn configure_overlay_window_builder(builder: WindowBuilder) -> WindowBuilder {
+fn configure_window_overlay_builder(builder: WindowBuilder) -> WindowBuilder {
     builder
         .with_override_redirect(true)
         .with_x11_window_type(vec![XWindowType::Notification])
 }
 
-fn configure_overlay_surface_window(window: &Window) {
+fn configure_surface_overlay_window(window: &Window) {
     if let Err(error) = window.set_cursor_hittest(false) {
         eprintln!(
             "ViMouse: failed to make an overlay click-through ({error}) - it may intercept mouse clicks."
         );
     }
-    platform_configure_overlay_window(window);
+    platform_configure_window_overlay(window);
 }
 
 #[cfg(target_os = "windows")]
-fn platform_configure_overlay_window(window: &Window) {
+fn platform_configure_window_overlay(window: &Window) {
     unsafe {
         let hwnd = window.hwnd() as HWND;
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
@@ -658,7 +658,7 @@ fn platform_configure_overlay_window(window: &Window) {
 }
 
 #[cfg(target_os = "linux")]
-fn platform_configure_overlay_window(window: &Window) {
+fn platform_configure_window_overlay(window: &Window) {
     let Some(display) = window.xlib_display() else {
         return;
     };
@@ -688,15 +688,15 @@ fn platform_configure_overlay_window(window: &Window) {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_configure_overlay_window(window: &Window) {
-    super::raise_overlay_window_level(window);
+fn platform_configure_window_overlay(window: &Window) {
+    super::raise_window_overlay_level(window);
 }
 
 // winit's set_visible(true) calls makeKeyAndOrderFront:, which also hands this
 // non-activating, click-through overlay keyboard focus it doesn't want. orderFront:
 // skips that.
 #[cfg(target_os = "macos")]
-fn show_overlay_window(window: &Window) {
+fn show_window_overlay(window: &Window) {
     unsafe {
         use objc::runtime::Object;
         let ns_window = window.ns_window() as *mut Object;
@@ -705,14 +705,14 @@ fn show_overlay_window(window: &Window) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn show_overlay_window(window: &Window) {
+fn show_window_overlay(window: &Window) {
     window.set_visible(true);
 }
 
-// Mirrors show_overlay_window: call orderOut: directly instead of winit's
+// Mirrors show_window_overlay: call orderOut: directly instead of winit's
 // set_visible(false), which routes through its own orderOut: wrapper.
 #[cfg(target_os = "macos")]
-pub fn hide_overlay_window(window: &Window) {
+pub fn hide_window_overlay(window: &Window) {
     unsafe {
         use objc::runtime::Object;
         let ns_window = window.ns_window() as *mut Object;
@@ -721,7 +721,7 @@ pub fn hide_overlay_window(window: &Window) {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn hide_overlay_window(window: &Window) {
+pub fn hide_window_overlay(window: &Window) {
     window.set_visible(false);
 }
 
@@ -740,22 +740,22 @@ fn monitor_size_physical(monitor: &MonitorInfo) -> (u32, u32) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_overlay_window_size(window: &Window, monitor: &MonitorInfo, _w: u32, _h: u32) {
+fn set_window_overlay_size(window: &Window, monitor: &MonitorInfo, _w: u32, _h: u32) {
     window.set_inner_size(LogicalSize::new(monitor.width, monitor.height));
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_overlay_window_size(window: &Window, _monitor: &MonitorInfo, w: u32, h: u32) {
+fn set_window_overlay_size(window: &Window, _monitor: &MonitorInfo, w: u32, h: u32) {
     window.set_inner_size(PhysicalSize::new(w, h));
 }
 
 #[cfg(target_os = "macos")]
-fn position_overlay_window(window: &Window, monitor: &MonitorInfo) {
+fn position_window_overlay(window: &Window, monitor: &MonitorInfo) {
     window.set_outer_position(LogicalPosition::new(monitor.origin.x, monitor.origin.y));
 }
 
 #[cfg(not(target_os = "macos"))]
-fn position_overlay_window(window: &Window, monitor: &MonitorInfo) {
+fn position_window_overlay(window: &Window, monitor: &MonitorInfo) {
     window.set_outer_position(PhysicalPosition::new(
         monitor.origin.x.round() as i32,
         monitor.origin.y.round() as i32,

@@ -19,11 +19,11 @@ mod state;
 
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
-#[cfg(target_os = "windows")]
-use crate::overlay::create_overlay_owner_hwnd;
 use crate::overlay::create_topmost_anchor;
+#[cfg(target_os = "windows")]
+use crate::overlay::create_window_overlay_owner_hwnd;
 use crate::overlay::{
-    create_event_loop, create_overlay_window, create_window, hide_overlay_window, key_label,
+    create_event_loop, create_window, create_window_overlay, hide_window_overlay, key_label,
     show_mode_overlay_window, update_mode_overlay, GridOverlayState, GridSurface, MarkGlyph,
     MarkOverlayState, MarkSurface, ModeOverlayState, ModeSurface,
 };
@@ -156,9 +156,9 @@ fn create_grid_slots(
     windows.push(first_window);
     for _ in 1..monitors.len() {
         #[cfg(target_os = "windows")]
-        windows.push(create_overlay_window(event_loop, owner));
+        windows.push(create_window_overlay(event_loop, owner));
         #[cfg(not(target_os = "windows"))]
-        windows.push(create_overlay_window(event_loop));
+        windows.push(create_window_overlay(event_loop));
     }
 
     let mut slots = Vec::with_capacity(monitors.len());
@@ -185,9 +185,9 @@ fn create_mark_slots(
     windows.push(first_window);
     for _ in 1..monitors.len() {
         #[cfg(target_os = "windows")]
-        windows.push(create_overlay_window(event_loop, owner));
+        windows.push(create_window_overlay(event_loop, owner));
         #[cfg(not(target_os = "windows"))]
-        windows.push(create_overlay_window(event_loop));
+        windows.push(create_window_overlay(event_loop));
     }
 
     windows
@@ -245,7 +245,7 @@ fn update_grid_slot(slot: &mut GridSlot, visible: bool) {
 }
 
 // Marks are global, so a slot shows whenever overlays are visible AND it owns a mark
-// (keeps mark-free monitors from flashing empty overlay windows).
+// (keeps mark-free monitors from flashing empty window overlays).
 fn update_mark_slot(slot: &mut MarkSlot, visible: bool, marks: &[MarkGlyph]) {
     let has_marks = marks.iter().any(|m| slot.monitor.contains(m.position));
     slot.surface.update(
@@ -303,19 +303,19 @@ fn main() {
     let event_loop = create_event_loop();
     let bootstrap_window = create_window(&event_loop);
     #[cfg(target_os = "windows")]
-    let grid_owner = create_overlay_owner_hwnd();
+    let grid_owner = create_window_overlay_owner_hwnd();
     #[cfg(target_os = "windows")]
-    let bootstrap_grid_window = create_overlay_window(&event_loop, grid_owner);
+    let bootstrap_grid_window = create_window_overlay(&event_loop, grid_owner);
     #[cfg(not(target_os = "windows"))]
-    let bootstrap_grid_window = create_overlay_window(&event_loop);
+    let bootstrap_grid_window = create_window_overlay(&event_loop);
     #[cfg(target_os = "windows")]
-    let bootstrap_letters_window = create_overlay_window(&event_loop, grid_owner);
+    let bootstrap_letters_window = create_window_overlay(&event_loop, grid_owner);
     #[cfg(not(target_os = "windows"))]
-    let bootstrap_letters_window = create_overlay_window(&event_loop);
+    let bootstrap_letters_window = create_window_overlay(&event_loop);
     #[cfg(target_os = "windows")]
-    let bootstrap_mark_window = create_overlay_window(&event_loop, grid_owner);
+    let bootstrap_mark_window = create_window_overlay(&event_loop, grid_owner);
     #[cfg(not(target_os = "windows"))]
-    let bootstrap_mark_window = create_overlay_window(&event_loop);
+    let bootstrap_mark_window = create_window_overlay(&event_loop);
 
     let monitors = collect_monitors(&bootstrap_window);
     let primary_monitor = monitors.first().copied().expect("no monitors available");
@@ -451,7 +451,7 @@ fn main() {
                     let visibility_changed = last_mode_state.visible != mode_state.visible;
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
-                        hide_overlay_window(&mode_slots[last_selected_monitor].window);
+                        hide_window_overlay(&mode_slots[last_selected_monitor].window);
                     }
 
                     last_mode_state = mode_state;
@@ -472,7 +472,7 @@ fn main() {
                 let grid_state = snap.grid_state;
                 if last_grid_state != grid_state {
                     if last_selected_monitor != selected_monitor && last_grid_state.visible {
-                        hide_overlay_window(&grid_slots[last_selected_monitor].window);
+                        hide_window_overlay(&grid_slots[last_selected_monitor].window);
                     }
 
                     last_grid_state = grid_state;
@@ -482,7 +482,7 @@ fn main() {
                 let letters_state = snap.letters_state;
                 if last_letters_state != letters_state {
                     if last_selected_monitor != selected_monitor && last_letters_state.visible {
-                        hide_overlay_window(&letters_slots[last_selected_monitor].window);
+                        hide_window_overlay(&letters_slots[last_selected_monitor].window);
                     }
 
                     last_letters_state = letters_state;

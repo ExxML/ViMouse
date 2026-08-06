@@ -91,14 +91,14 @@ pub const GRID_THICKNESS: usize = 1; // Thickness of grid lines in pixels
 pub const GRID_ALPHA: u8 = 160; // Opacity of grid lines (0–255)
 pub const GRID_BRIGHTNESS: u8 = 128; // RGB channel value of grid lines (greyscale intensity 0-255)
 
-// Overlay letter appearance
+// Letter overlay appearance
 pub const DEFAULT_GRID_LETTER_ENABLED: bool = false; // Whether the grid letters are enabled by default
-pub const OVERLAY_LETTER_SIZE_MONITOR_FRACTION: f64 = 0.008; // Overlay letter height as a fraction of the monitor's smaller dimension
-pub const OVERLAY_LETTER_ALPHA: u8 = 224; // Opacity of overlay letters (0–255)
-pub const OVERLAY_LETTER_BRIGHTNESS: u8 = 255; // RGB channel value of overlay letters (greyscale intensity 0-255)
-pub const OVERLAY_LETTER_OUTLINE_THICKNESS: usize = 1; // Thickness of overlay letter outlines in pixels
-pub const OVERLAY_LETTER_OUTLINE_ALPHA: u8 = 224; // Opacity of overlay letter outlines (0–255)
-pub const OVERLAY_LETTER_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of overlay letter outlines (greyscale intensity 0-255)
+pub const LETTER_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.008; // Letter overlay height as a fraction of the monitor's smaller dimension
+pub const LETTER_OVERLAY_ALPHA: u8 = 224; // Opacity of letter overlays (0–255)
+pub const LETTER_OVERLAY_BRIGHTNESS: u8 = 255; // RGB channel value of letter overlays (greyscale intensity 0-255)
+pub const LETTER_OVERLAY_OUTLINE_THICKNESS: usize = 1; // Thickness of letter overlay outlines in pixels
+pub const LETTER_OVERLAY_OUTLINE_ALPHA: u8 = 224; // Opacity of letter overlay outlines (0–255)
+pub const LETTER_OVERLAY_OUTLINE_BRIGHTNESS: u8 = 0; // RGB channel value of letter overlay outlines (greyscale intensity 0-255)
 
 // Mark keys
 pub const KEYS_MARK: &[Key] = &[

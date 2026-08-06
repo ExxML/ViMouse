@@ -79,7 +79,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
             .with_inner_size(PhysicalSize::new(1u32, 1u32)),
     )
     .build(event_loop)
-    .expect("failed to create overlay window");
+    .expect("failed to create window overlay");
 
     configure_overlay_window(&window);
     window
@@ -122,7 +122,7 @@ pub fn update_mode_overlay(
     if overlay.visible {
         show_mode_overlay_window(window);
     } else {
-        super::overlay_surface::hide_overlay_window(window);
+        super::surface_overlay::hide_window_overlay(window);
     }
     Ok(())
 }
@@ -295,7 +295,7 @@ fn configure_platform_overlay_window(window: &Window) {
 
 #[cfg(target_os = "macos")]
 fn configure_platform_overlay_window(window: &Window) {
-    super::raise_overlay_window_level(window);
+    super::raise_window_overlay_level(window);
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]

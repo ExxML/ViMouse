@@ -1,15 +1,15 @@
 // Mark overlay layout. Renders a glyph at each set mark's screen position, styled exactly
-// like the grid cell letters. Shares the glyph rasterization (overlay_glyph) and the
-// per-platform compositor (overlay_surface) with the grid overlay; this file only decides
+// like the grid cell letters. Shares the glyph rasterization (glyph_overlay) and the
+// per-platform compositor (surface_overlay) with the grid overlay; this file only decides
 // where each mark glyph goes.
 
 #[cfg(target_os = "linux")]
-use super::overlay_glyph::blit_label_argb_u32;
+use super::glyph_overlay::blit_label_argb_u32;
 #[cfg(target_os = "windows")]
-use super::overlay_glyph::blit_label_bgra_u32;
+use super::glyph_overlay::blit_label_bgra_u32;
 #[cfg(target_os = "macos")]
-use super::overlay_glyph::blit_label_bgra_u8;
-use super::overlay_surface::OverlaySurface;
+use super::glyph_overlay::blit_label_bgra_u8;
+use super::surface_overlay::SurfaceOverlay;
 use crate::state::{MonitorInfo, Point};
 use winit::window::Window;
 
@@ -29,7 +29,7 @@ pub struct MarkOverlayState {
 }
 
 pub struct MarkSurface {
-    surface: OverlaySurface,
+    surface: SurfaceOverlay,
     // Bumped whenever the rendered content could differ, so the surface rebuilds its cache.
     version: u64,
     last_marks: Vec<MarkGlyph>,
@@ -39,7 +39,7 @@ pub struct MarkSurface {
 impl MarkSurface {
     pub fn new() -> Self {
         Self {
-            surface: OverlaySurface::new(),
+            surface: SurfaceOverlay::new(),
             version: 0,
             last_marks: Vec::new(),
             last_monitor: None,
@@ -74,7 +74,7 @@ impl Default for MarkSurface {
 
 // Convert a mark's virtual-desktop position to monitor-local physical pixel coordinates,
 // or None if the mark does not lie on this monitor. Uses the same physical-size convention
-// as overlay_surface::monitor_size_physical (scale applied on macOS only).
+// as surface_overlay::monitor_size_physical (scale applied on macOS only).
 fn mark_pixel(monitor: &MonitorInfo, position: Point) -> Option<(usize, usize)> {
     if !monitor.contains(position) {
         return None;
