@@ -1,6 +1,6 @@
 use crate::config::{
-    DEFAULT_GRID_ENABLED, DEFAULT_GRID_LETTER_ENABLED, ICON_OVERLAY_INSERT_COLOR,
-    ICON_OVERLAY_NORMAL_COLOR,
+    DEFAULT_GRID_ENABLED, DEFAULT_GRID_LETTER_ENABLED, DEFAULT_ICON_ENABLED,
+    ICON_OVERLAY_INSERT_COLOR, ICON_OVERLAY_NORMAL_COLOR,
 };
 use rdev::{Button, Key};
 use std::collections::HashMap;
@@ -72,6 +72,7 @@ pub struct SharedState {
     pub left_button_down: bool,
     pub right_button_down: bool,
     pub pending_actions: Vec<Action>,
+    pub show_icon: bool,
     pub show_grid: bool,
     pub show_grid_letters: bool,
     pub show_overlays: bool,
@@ -93,6 +94,7 @@ impl SharedState {
             left_button_down: false,
             right_button_down: false,
             pending_actions: Vec::new(),
+            show_icon: DEFAULT_ICON_ENABLED,
             show_grid: DEFAULT_GRID_ENABLED,
             show_grid_letters: DEFAULT_GRID_LETTER_ENABLED,
             show_overlays: true,

@@ -1,18 +1,5 @@
 use rdev::Key;
 
-// Overlay configuration
-#[allow(dead_code)]
-pub enum IconOverlayPos {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
-pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length as a fraction of the monitor's smaller dimension
-pub const ICON_OVERLAY_NORMAL_COLOR: [u8; 4] = [30, 160, 98, 255];
-pub const ICON_OVERLAY_INSERT_COLOR: [u8; 4] = [44, 55, 72, 255];
-
 // Frequency of the motion loop that emits synthetic mouse/scroll events
 // Recommend setting this to match the refresh rate of your display
 pub const TICK_RATE_HZ: u64 = 240;
@@ -52,8 +39,7 @@ pub const KEY_MOUSE_2: Key = Key::Quote; // Right click
 pub const KEY_MOUSE_3: Key = Key::KeyM; // Middle (scroll) click
 pub const KEY_MOUSE_4: Key = Key::KeyO; // Back (X1) click
 pub const KEY_MOUSE_5: Key = Key::KeyP; // Forward (X2) click
-// Hold any KEYS_SCROLL and press a KEY_MOVE to scroll
-pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight];
+pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight]; // Hold any KEYS_SCROLL to scroll
 
 // Speed modifier keys for cursor movement and scrolling
 pub const KEY_FAST: Key = Key::Space;
@@ -78,12 +64,26 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 // - 0.0 to disable subcell jumps
 // - f64::INFINITY to keep the subcell jump primed indefinitely
 pub const JUMP_GRID_DELAY: f64 = f64::INFINITY;
-// Toggle jump grid overlay
-pub const KEY_TOGGLE_GRID: Key = Key::Slash;
-// Toggle grid cell letter overlay
-pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Dot;
-// Toggle all overlays (icon, grid, and letters) (available in both Normal and Insert mode)
-pub const KEY_TOGGLE_OVERLAY: Key = Key::AltGr;
+
+// Overlay visibility
+pub const KEY_TOGGLE_ICON: Key = Key::Comma; // Toggle icon overlay
+pub const KEY_TOGGLE_GRID: Key = Key::Dot; // Toggle jump grid overlay
+pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Slash; // Toggle grid cell letter overlay
+pub const KEY_TOGGLE_OVERLAY: Key = Key::AltGr; // Toggle all overlays (available in both Normal and Insert mode)
+
+// Icon overlay appearance
+pub const DEFAULT_ICON_ENABLED: bool = true; // Whether the icon overlay is enabled by default
+#[allow(dead_code)]
+pub enum IconOverlayPos {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
+pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length as a fraction of the monitor's smaller dimension
+pub const ICON_OVERLAY_NORMAL_COLOR: [u8; 4] = [30, 160, 98, 255];
+pub const ICON_OVERLAY_INSERT_COLOR: [u8; 4] = [44, 55, 72, 255];
 
 // Grid overlay line appearance
 pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default

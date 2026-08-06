@@ -17,6 +17,7 @@ mod overlay;
 mod platform_input;
 mod state;
 
+use crate::config::DEFAULT_ICON_ENABLED;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 #[cfg(target_os = "windows")]
@@ -43,7 +44,7 @@ struct UISnapshot {
     grid_state: GridOverlayState,
     letters_state: GridOverlayState,
     mark_state: MarkOverlayState,
-    show_overlays: bool,
+    show_icon: bool,
 }
 
 // Build the mark glyph list from the marks map: each set mark becomes its key's label glyph
@@ -74,7 +75,7 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
         .expect("selected monitor out of bounds");
     UISnapshot {
         selected_monitor: state.selected_monitor,
-        show_overlays: state.show_overlays,
+        show_icon: state.show_overlays && state.show_icon,
         icon_overlay: IconOverlayState {
             mode: state.mode,
             monitor,
@@ -432,8 +433,10 @@ fn main() {
         let snap = current_ui_snapshot(&shared);
         snap.selected_monitor
     };
-    let mut last_show_overlays = true;
-    show_icon_overlay_window(&icon_slots[last_selected_monitor].window);
+    let mut last_show_icon = DEFAULT_ICON_ENABLED;
+    if last_show_icon {
+        show_icon_overlay_window(&icon_slots[last_selected_monitor].window);
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -443,23 +446,23 @@ fn main() {
                 let snap = current_ui_snapshot(&shared);
                 let selected_monitor = snap.selected_monitor;
 
-                let show_overlays = snap.show_overlays;
+                let show_icon = snap.show_icon;
                 let icon_overlay = snap.icon_overlay;
                 let icon_changed = last_icon_overlay != icon_overlay;
-                let overlays_changed = last_show_overlays != show_overlays;
-                if icon_changed || overlays_changed {
+                let visibility_changed = last_show_icon != show_icon;
+                if icon_changed || visibility_changed {
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
                         hide_overlay_window(&icon_slots[last_selected_monitor].window);
                     }
 
                     last_icon_overlay = icon_overlay;
-                    last_show_overlays = show_overlays;
-                    if overlays_changed || monitor_changed {
+                    last_show_icon = show_icon;
+                    if visibility_changed || monitor_changed {
                         paint_icon_slot_or_exit(
                             &mut icon_slots[selected_monitor],
                             last_icon_overlay.mode,
-                            show_overlays,
+                            show_icon,
                             control_flow,
                         );
                     } else {
@@ -504,7 +507,7 @@ fn main() {
             WinitEvent::WindowEvent { window_id, event } => match event {
                 WindowEvent::Resized(_) => {
                     if let Some(index) = find_icon_slot(&icon_slots, window_id) {
-                        let show = index == last_selected_monitor && last_show_overlays;
+                        let show = index == last_selected_monitor && last_show_icon;
                         paint_icon_slot_or_exit(
                             &mut icon_slots[index],
                             last_icon_overlay.mode,
@@ -536,7 +539,7 @@ fn main() {
             },
             WinitEvent::RedrawRequested(window_id) => {
                 if let Some(index) = find_icon_slot(&icon_slots, window_id) {
-                    let show = index == last_selected_monitor && last_show_overlays;
+                    let show = index == last_selected_monitor && last_show_icon;
                     paint_icon_slot_or_exit(
                         &mut icon_slots[index],
                         last_icon_overlay.mode,
