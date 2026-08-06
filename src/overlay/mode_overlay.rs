@@ -1,6 +1,5 @@
-use crate::config::{IconOverlayPos, ICON_OVERLAY_POSITION, ICON_OVERLAY_SIZE_MONITOR_FRACTION};
+use crate::config::{ModeOverlayPos, MODE_OVERLAY_POSITION, MODE_OVERLAY_THICKNESS};
 use crate::state::{Mode, MonitorInfo};
-use font8x8::{UnicodeFonts, BASIC_FONTS};
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
@@ -30,16 +29,17 @@ use winit::window::{Window, WindowBuilder, WindowLevel};
 use x11_dl::xlib;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IconOverlayState {
+pub struct ModeOverlayState {
+    pub visible: bool,
     pub mode: Mode,
     pub monitor: MonitorInfo,
 }
 
-pub struct IconSurface {
+pub struct ModeSurface {
     surface: softbuffer::Surface,
 }
 
-impl IconSurface {
+impl ModeSurface {
     pub fn new(window: &Window) -> Self {
         let context = unsafe { softbuffer::Context::new(window) }
             .expect("softbuffer context creation failed");
@@ -85,189 +85,142 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
     window
 }
 
-pub fn show_icon_overlay_window(window: &Window) {
+pub fn show_mode_overlay_window(window: &Window) {
     window.set_visible(true);
     finalize_overlay_window(window);
 }
 
-pub fn paint_icon_overlay(
+// Repaint the line for `overlay.mode` on `overlay.monitor`, then show or hide the window per
+// `overlay.visible`. Painting a hidden overlay keeps the buffer current so a later show is
+// a plain window-visibility change with nothing to redraw.
+pub fn update_mode_overlay(
     window: &Window,
-    icon_surface: &mut IconSurface,
-    overlay: &IconOverlayState,
+    mode_surface: &mut ModeSurface,
+    overlay: &ModeOverlayState,
 ) -> Result<(), String> {
-    let inner_size = sync_overlay_size(window, icon_surface, &overlay.monitor)?;
-    let (w, h) = (inner_size.width, inner_size.height);
+    let inner_size = sync_overlay_size(window, mode_surface, &overlay.monitor)?;
 
-    let mut buffer = icon_surface
+    let mut buffer = mode_surface
         .surface
         .buffer_mut()
         .map_err(|e| format!("softbuffer buffer_mut: {e:?}"))?;
 
-    let frame_len = (w * h) as usize;
-    let mut frame: Vec<u8> = vec![0u8; frame_len * 4];
-    draw_overlay(&mut frame, overlay.mode, w as usize);
-
-    // softbuffer uses 0RGB packed u32 (high byte ignored, then R, G, B)
-    for (i, pixel) in buffer.iter_mut().take(frame_len).enumerate() {
-        let r = frame[i * 4] as u32;
-        let g = frame[i * 4 + 1] as u32;
-        let b = frame[i * 4 + 2] as u32;
-        *pixel = (r << 16) | (g << 8) | b;
+    // The line is a single flat color, so the whole surface is one fill.
+    // softbuffer uses 0RGB packed u32 (high byte ignored, then R, G, B).
+    let [r, g, b, _] = overlay.mode.color();
+    let pixel = ((r as u32) << 16) | ((g as u32) << 8) | b as u32;
+    let pixel_count = (inner_size.width * inner_size.height) as usize;
+    for slot in buffer.iter_mut().take(pixel_count) {
+        *slot = pixel;
     }
 
     buffer
         .present()
         .map_err(|e| format!("softbuffer present: {e:?}"))?;
     position_overlay(window, &overlay.monitor, inner_size);
+
+    if overlay.visible {
+        show_mode_overlay_window(window);
+    } else {
+        super::overlay_surface::hide_overlay_window(window);
+    }
     Ok(())
 }
 
-fn overlay_size_for_monitor(monitor: MonitorInfo) -> u32 {
-    (monitor.width.min(monitor.height) * ICON_OVERLAY_SIZE_MONITOR_FRACTION)
-        .round()
-        .max(1.0) as u32
+impl ModeOverlayPos {
+    // Horizontal lines span the monitor width; vertical lines span its height.
+    fn is_horizontal(&self) -> bool {
+        matches!(self, ModeOverlayPos::Top | ModeOverlayPos::Bottom)
+    }
+}
+
+// Line extent along the monitor edge it runs on, in the same units as MonitorInfo (logical).
+fn overlay_extent_for_monitor(monitor: &MonitorInfo) -> f64 {
+    if MODE_OVERLAY_POSITION.is_horizontal() {
+        monitor.width
+    } else {
+        monitor.height
+    }
 }
 
 fn sync_overlay_size(
     window: &Window,
-    icon_surface: &mut IconSurface,
+    mode_surface: &mut ModeSurface,
     monitor: &MonitorInfo,
 ) -> Result<PhysicalSize<u32>, String> {
-    let overlay_size = overlay_size_for_monitor(*monitor);
-    let inner_size = overlay_inner_size(monitor, overlay_size);
-    let (w, h) = (inner_size.width, inner_size.height);
+    let inner_size = overlay_inner_size(monitor);
 
     if window.inner_size() != inner_size {
         window.set_visible(false);
-        set_overlay_inner_size(window, monitor, overlay_size);
+        set_overlay_inner_size(window, monitor);
     }
 
-    icon_surface
+    mode_surface
         .surface
         .resize(
-            std::num::NonZeroU32::new(w.max(1)).unwrap(),
-            std::num::NonZeroU32::new(h.max(1)).unwrap(),
+            std::num::NonZeroU32::new(inner_size.width.max(1)).unwrap(),
+            std::num::NonZeroU32::new(inner_size.height.max(1)).unwrap(),
         )
         .map_err(|e| format!("softbuffer resize: {e:?}"))?;
 
     Ok(inner_size)
 }
 
-#[cfg(target_os = "macos")]
-fn overlay_inner_size(monitor: &MonitorInfo, overlay_size: u32) -> PhysicalSize<u32> {
-    let physical_size = (overlay_size as f64 * monitor.scale_factor)
-        .round()
-        .max(1.0) as u32;
-    PhysicalSize::new(physical_size, physical_size)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn overlay_inner_size(_monitor: &MonitorInfo, overlay_size: u32) -> PhysicalSize<u32> {
-    PhysicalSize::new(overlay_size, overlay_size)
+// Thickness is in physical pixels, matching GRID_THICKNESS; the extent follows the monitor.
+fn line_physical_size(extent: u32) -> PhysicalSize<u32> {
+    let thickness = (MODE_OVERLAY_THICKNESS as u32).max(1);
+    if MODE_OVERLAY_POSITION.is_horizontal() {
+        PhysicalSize::new(extent.max(1), thickness)
+    } else {
+        PhysicalSize::new(thickness, extent.max(1))
+    }
 }
 
 #[cfg(target_os = "macos")]
-fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size: u32) {
-    let overlay_size = overlay_size as f64;
-    window.set_inner_size(LogicalSize::new(overlay_size, overlay_size));
+fn overlay_inner_size(monitor: &MonitorInfo) -> PhysicalSize<u32> {
+    let extent = (overlay_extent_for_monitor(monitor) * monitor.scale_factor).round() as u32;
+    line_physical_size(extent)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_overlay_inner_size(window: &Window, _monitor: &MonitorInfo, overlay_size: u32) {
-    window.set_inner_size(PhysicalSize::new(overlay_size, overlay_size));
+fn overlay_inner_size(monitor: &MonitorInfo) -> PhysicalSize<u32> {
+    line_physical_size(overlay_extent_for_monitor(monitor).round() as u32)
+}
+
+#[cfg(target_os = "macos")]
+fn set_overlay_inner_size(window: &Window, monitor: &MonitorInfo) {
+    let size = overlay_inner_size(monitor);
+    window.set_inner_size(LogicalSize::new(
+        size.width as f64 / monitor.scale_factor,
+        size.height as f64 / monitor.scale_factor,
+    ));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_overlay_inner_size(window: &Window, monitor: &MonitorInfo) {
+    window.set_inner_size(overlay_inner_size(monitor));
 }
 
 #[cfg(target_os = "macos")]
 fn position_overlay(window: &Window, monitor: &MonitorInfo, inner_size: PhysicalSize<u32>) {
-    let overlay_size = inner_size.to_logical::<f64>(monitor.scale_factor);
-    let x = match ICON_OVERLAY_POSITION {
-        IconOverlayPos::TopLeft | IconOverlayPos::BottomLeft => monitor.origin.x,
-        IconOverlayPos::TopRight | IconOverlayPos::BottomRight => {
-            monitor.origin.x + monitor.width - overlay_size.width
-        }
-    };
-    let y = match ICON_OVERLAY_POSITION {
-        IconOverlayPos::TopLeft | IconOverlayPos::TopRight => monitor.origin.y,
-        IconOverlayPos::BottomLeft | IconOverlayPos::BottomRight => {
-            monitor.origin.y + monitor.height - overlay_size.height
-        }
-    };
+    let size = inner_size.to_logical::<f64>(monitor.scale_factor);
+    let (x, y) = overlay_origin(monitor, size.width, size.height);
     window.set_outer_position(LogicalPosition::new(x, y));
 }
 
 #[cfg(not(target_os = "macos"))]
 fn position_overlay(window: &Window, monitor: &MonitorInfo, inner_size: PhysicalSize<u32>) {
-    let x = match ICON_OVERLAY_POSITION {
-        IconOverlayPos::TopLeft | IconOverlayPos::BottomLeft => monitor.origin.x,
-        IconOverlayPos::TopRight | IconOverlayPos::BottomRight => {
-            monitor.origin.x + monitor.width - inner_size.width as f64
-        }
-    };
-    let y = match ICON_OVERLAY_POSITION {
-        IconOverlayPos::TopLeft | IconOverlayPos::TopRight => monitor.origin.y,
-        IconOverlayPos::BottomLeft | IconOverlayPos::BottomRight => {
-            monitor.origin.y + monitor.height - inner_size.height as f64
-        }
-    };
+    let (x, y) = overlay_origin(monitor, inner_size.width as f64, inner_size.height as f64);
     window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
-fn draw_overlay(frame: &mut [u8], mode: Mode, overlay_size: usize) {
-    let [r, g, b, a] = mode.background();
-    for chunk in frame.chunks_exact_mut(4) {
-        chunk[0] = r;
-        chunk[1] = g;
-        chunk[2] = b;
-        chunk[3] = a;
-    }
-
-    let glyph = BASIC_FONTS
-        .get(mode.label())
-        .expect("overlay glyph should exist");
-    let scale = ((overlay_size * 3) + 20) / 40;
-    let scale = scale.max(1);
-    let mut min_col = 8usize;
-    let mut max_col = 0usize;
-    let mut min_row = 8usize;
-    let mut max_row = 0usize;
-
-    for (row, bits) in glyph.iter().enumerate() {
-        if *bits == 0 {
-            continue;
-        }
-        min_row = min_row.min(row);
-        max_row = max_row.max(row);
-        for col in 0..8usize {
-            if (bits >> col) & 1 == 0 {
-                continue;
-            }
-            min_col = min_col.min(col);
-            max_col = max_col.max(col);
-        }
-    }
-
-    let glyph_width = (max_col - min_col + 1) * scale;
-    let glyph_height = (max_row - min_row + 1) * scale;
-    let offset_x = (overlay_size - glyph_width) / 2;
-    let offset_y = (overlay_size - glyph_height) / 2;
-
-    for (row, bits) in glyph.iter().enumerate() {
-        for col in 0..8usize {
-            if (bits >> col) & 1 == 0 {
-                continue;
-            }
-            for dy in 0..scale {
-                for dx in 0..scale {
-                    let px = offset_x + ((col - min_col) * scale) + dx;
-                    let py = offset_y + ((row - min_row) * scale) + dy;
-                    let index = (py * overlay_size + px) * 4;
-                    frame[index] = 255;
-                    frame[index + 1] = 255;
-                    frame[index + 2] = 255;
-                    frame[index + 3] = 255;
-                }
-            }
-        }
+// Top-left corner of the line, flush against the configured monitor edge.
+fn overlay_origin(monitor: &MonitorInfo, width: f64, height: f64) -> (f64, f64) {
+    match MODE_OVERLAY_POSITION {
+        ModeOverlayPos::Top => (monitor.origin.x, monitor.origin.y),
+        ModeOverlayPos::Bottom => (monitor.origin.x, monitor.origin.y + monitor.height - height),
+        ModeOverlayPos::Left => (monitor.origin.x, monitor.origin.y),
+        ModeOverlayPos::Right => (monitor.origin.x + monitor.width - width, monitor.origin.y),
     }
 }
 
@@ -297,7 +250,7 @@ fn configure_overlay_window(window: &Window) {
 fn configure_overlay_hittest(window: &Window) {
     if let Err(error) = window.set_cursor_hittest(false) {
         eprintln!(
-            "ViMouse: failed to make the icon overlay click-through ({error}) - it may intercept mouse clicks."
+            "ViMouse: failed to make the mode overlay click-through ({error}) - it may intercept mouse clicks."
         );
     }
 }

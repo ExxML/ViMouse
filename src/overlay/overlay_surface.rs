@@ -482,7 +482,7 @@ pub fn create_overlay_owner_hwnd() -> HWND {
 
 // A fully transparent, click-through, always-on-top window spanning the primary monitor that stays
 // visible for the whole process. It permanently occupies the top of the "always on top" band so
-// the window manager keeps ViMouse's overlays (icon, grid, marks) above every other window,
+// the window manager keeps ViMouse's overlays (mode line, grid, marks) above every other window,
 // including ones that aggressively raise themselves such as the Windows taskbar. Invisible to the
 // user, it counts as a visible topmost window to the window manager.
 //

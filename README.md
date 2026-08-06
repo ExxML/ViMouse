@@ -38,10 +38,10 @@ ViMouse has two modes, toggled like Vim:
 
 | Mode | Key | Indicator | Description |
 |------|-----|-----------|-------------|
-| **Normal** | `CapsLock` | `N` | ViMouse intercepts keys (cursor control active) |
-| **Insert** | `i` | `I` | Keys pass through to apps normally |
+| **Normal** | `CapsLock` | Blue | ViMouse intercepts keys (cursor control active) |
+| **Insert** | `i` | Orange | Keys pass through to apps normally |
 
-A small icon in the bottom-left corner of your screen shows the current mode.
+A thin line along the bottom edge of your screen shows the current mode by color.
 
 **Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.**
 
@@ -121,7 +121,7 @@ The screen is divided into a 5×3 grid - press the labeled key to teleport the c
 - Press `Slash` to toggle a reference jump grid overlay to serve as a guide for where to jump.
 - Press `Period` to toggle a reference grid of letters that show where you will jump for each letter.
 
-Press `n` to cycle focus to another monitor, moving the cursor, mode icon, and jump grid.
+Press `n` to cycle focus to another monitor, moving the cursor, mode line, and jump grid.
 
 > [!TIP]
 > It is recommended to use the jump grid as your primary method of navigation and only use the cursor movement keys (HJKL) for micro-adjustments.

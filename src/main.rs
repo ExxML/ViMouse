@@ -17,7 +17,6 @@ mod overlay;
 mod platform_input;
 mod state;
 
-use crate::config::DEFAULT_ICON_ENABLED;
 use crate::input::{spawn_input_hook, spawn_motion_loop};
 use crate::monitor::collect_monitors;
 #[cfg(target_os = "windows")]
@@ -25,8 +24,8 @@ use crate::overlay::create_overlay_owner_hwnd;
 use crate::overlay::create_topmost_anchor;
 use crate::overlay::{
     create_event_loop, create_overlay_window, create_window, hide_overlay_window, key_label,
-    paint_icon_overlay, show_icon_overlay_window, GridOverlayState, GridSurface, IconOverlayState,
-    IconSurface, MarkGlyph, MarkOverlayState, MarkSurface,
+    show_mode_overlay_window, update_mode_overlay, GridOverlayState, GridSurface, MarkGlyph,
+    MarkOverlayState, MarkSurface, ModeOverlayState, ModeSurface,
 };
 use crate::platform_input::{mouse_button_is_down, shutdown_platform_input};
 use crate::state::{Action, SharedState};
@@ -40,11 +39,10 @@ use winit::window::{Window, WindowId};
 
 struct UISnapshot {
     selected_monitor: usize,
-    icon_overlay: IconOverlayState,
+    mode_state: ModeOverlayState,
     grid_state: GridOverlayState,
     letters_state: GridOverlayState,
     mark_state: MarkOverlayState,
-    show_icon: bool,
 }
 
 // Build the mark glyph list from the marks map: each set mark becomes its key's label glyph
@@ -75,8 +73,8 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
         .expect("selected monitor out of bounds");
     UISnapshot {
         selected_monitor: state.selected_monitor,
-        show_icon: state.show_overlays && state.show_icon,
-        icon_overlay: IconOverlayState {
+        mode_state: ModeOverlayState {
+            visible: state.show_overlays && state.show_mode_line,
             mode: state.mode,
             monitor,
         },
@@ -97,9 +95,9 @@ fn current_ui_snapshot(shared: &Arc<Mutex<SharedState>>) -> UISnapshot {
     }
 }
 
-struct IconSlot {
+struct ModeSlot {
     window: Window,
-    surface: IconSurface,
+    surface: ModeSurface,
     monitor: MonitorInfo,
 }
 
@@ -116,12 +114,12 @@ struct MarkSlot {
     monitor: MonitorInfo,
 }
 
-fn create_icon_slots(
+fn create_mode_slots(
     event_loop: &EventLoop<()>,
     first_window: Window,
     monitors: &[MonitorInfo],
     mode: Mode,
-) -> Result<Vec<IconSlot>, String> {
+) -> Result<Vec<ModeSlot>, String> {
     let mut windows = Vec::with_capacity(monitors.len());
     windows.push(first_window);
     for _ in 1..monitors.len() {
@@ -130,11 +128,14 @@ fn create_icon_slots(
 
     let mut slots = Vec::with_capacity(monitors.len());
     for (window, monitor) in windows.into_iter().zip(monitors.iter().copied()) {
-        let mut surface = IconSurface::new(&window);
-        let overlay = IconOverlayState { mode, monitor };
-        paint_icon_overlay(&window, &mut surface, &overlay)?;
-        window.set_visible(false);
-        slots.push(IconSlot {
+        let mut surface = ModeSurface::new(&window);
+        let overlay = ModeOverlayState {
+            visible: false,
+            mode,
+            monitor,
+        };
+        update_mode_overlay(&window, &mut surface, &overlay)?;
+        slots.push(ModeSlot {
             window,
             surface,
             monitor,
@@ -200,7 +201,7 @@ fn create_mark_slots(
         .collect()
 }
 
-fn find_icon_slot(slots: &[IconSlot], window_id: WindowId) -> Option<usize> {
+fn find_mode_slot(slots: &[ModeSlot], window_id: WindowId) -> Option<usize> {
     slots.iter().position(|slot| slot.window.id() == window_id)
 }
 
@@ -212,24 +213,23 @@ fn find_mark_slot(slots: &[MarkSlot], window_id: WindowId) -> Option<usize> {
     slots.iter().position(|slot| slot.window.id() == window_id)
 }
 
-fn paint_icon_slot_or_exit(
-    slot: &mut IconSlot,
-    mode: Mode,
-    show: bool,
+// Renders the slot with `state`'s mode, but on the slot's own monitor and with `visible`
+// resolved by the caller (only the focused monitor's slot is ever shown).
+fn update_mode_slot_or_exit(
+    slot: &mut ModeSlot,
+    state: &ModeOverlayState,
+    visible: bool,
     control_flow: &mut ControlFlow,
 ) {
-    let overlay = IconOverlayState {
-        mode,
+    let overlay = ModeOverlayState {
+        visible,
+        mode: state.mode,
         monitor: slot.monitor,
     };
-    match paint_icon_overlay(&slot.window, &mut slot.surface, &overlay) {
-        Ok(()) if show => show_icon_overlay_window(&slot.window),
-        Ok(()) => hide_overlay_window(&slot.window),
-        Err(error) => {
-            eprintln!("icon overlay render error: {error}");
-            shutdown_platform_input();
-            *control_flow = ControlFlow::Exit;
-        }
+    if let Err(error) = update_mode_overlay(&slot.window, &mut slot.surface, &overlay) {
+        eprintln!("mode overlay render error: {error}");
+        shutdown_platform_input();
+        *control_flow = ControlFlow::Exit;
     }
 }
 
@@ -353,7 +353,7 @@ fn main() {
     spawn_motion_loop(Arc::clone(&shared), motion_waker, ui_waker);
 
     let (
-        mut last_icon_overlay,
+        mut last_mode_state,
         mut last_grid_state,
         mut last_letters_state,
         mut last_mark_state,
@@ -366,7 +366,8 @@ fn main() {
             .copied()
             .expect("selected monitor out of bounds");
         (
-            IconOverlayState {
+            ModeOverlayState {
+                visible: state.show_mode_line,
                 mode: state.mode,
                 monitor,
             },
@@ -388,15 +389,15 @@ fn main() {
         )
     };
 
-    let mut icon_slots = match create_icon_slots(
+    let mut mode_slots = match create_mode_slots(
         &event_loop,
         bootstrap_window,
         &monitors,
-        last_icon_overlay.mode,
+        last_mode_state.mode,
     ) {
         Ok(slots) => slots,
         Err(error) => {
-            eprintln!("initial icon overlay render error: {error}");
+            eprintln!("initial mode overlay render error: {error}");
             shutdown_platform_input();
             return;
         }
@@ -433,9 +434,8 @@ fn main() {
         let snap = current_ui_snapshot(&shared);
         snap.selected_monitor
     };
-    let mut last_show_icon = DEFAULT_ICON_ENABLED;
-    if last_show_icon {
-        show_icon_overlay_window(&icon_slots[last_selected_monitor].window);
+    if last_mode_state.visible {
+        show_mode_overlay_window(&mode_slots[last_selected_monitor].window);
     }
 
     event_loop.run(move |event, _, control_flow| {
@@ -446,27 +446,26 @@ fn main() {
                 let snap = current_ui_snapshot(&shared);
                 let selected_monitor = snap.selected_monitor;
 
-                let show_icon = snap.show_icon;
-                let icon_overlay = snap.icon_overlay;
-                let icon_changed = last_icon_overlay != icon_overlay;
-                let visibility_changed = last_show_icon != show_icon;
-                if icon_changed || visibility_changed {
+                let mode_state = snap.mode_state;
+                if last_mode_state != mode_state {
+                    let visibility_changed = last_mode_state.visible != mode_state.visible;
                     let monitor_changed = last_selected_monitor != selected_monitor;
                     if monitor_changed {
-                        hide_overlay_window(&icon_slots[last_selected_monitor].window);
+                        hide_overlay_window(&mode_slots[last_selected_monitor].window);
                     }
 
-                    last_icon_overlay = icon_overlay;
-                    last_show_icon = show_icon;
+                    last_mode_state = mode_state;
+                    // A color-only change repaints via RedrawRequested; showing, hiding, or
+                    // moving to another monitor also needs the window resized and repositioned.
                     if visibility_changed || monitor_changed {
-                        paint_icon_slot_or_exit(
-                            &mut icon_slots[selected_monitor],
-                            last_icon_overlay.mode,
-                            show_icon,
+                        update_mode_slot_or_exit(
+                            &mut mode_slots[selected_monitor],
+                            &last_mode_state,
+                            last_mode_state.visible,
                             control_flow,
                         );
                     } else {
-                        icon_slots[selected_monitor].window.request_redraw();
+                        mode_slots[selected_monitor].window.request_redraw();
                     }
                 }
 
@@ -506,12 +505,12 @@ fn main() {
             }
             WinitEvent::WindowEvent { window_id, event } => match event {
                 WindowEvent::Resized(_) => {
-                    if let Some(index) = find_icon_slot(&icon_slots, window_id) {
-                        let show = index == last_selected_monitor && last_show_icon;
-                        paint_icon_slot_or_exit(
-                            &mut icon_slots[index],
-                            last_icon_overlay.mode,
-                            show,
+                    if let Some(index) = find_mode_slot(&mode_slots, window_id) {
+                        let visible = index == last_selected_monitor && last_mode_state.visible;
+                        update_mode_slot_or_exit(
+                            &mut mode_slots[index],
+                            &last_mode_state,
+                            visible,
                             control_flow,
                         );
                     } else if let Some(index) = find_grid_slot(&grid_slots, window_id) {
@@ -538,12 +537,12 @@ fn main() {
                 _ => {}
             },
             WinitEvent::RedrawRequested(window_id) => {
-                if let Some(index) = find_icon_slot(&icon_slots, window_id) {
-                    let show = index == last_selected_monitor && last_show_icon;
-                    paint_icon_slot_or_exit(
-                        &mut icon_slots[index],
-                        last_icon_overlay.mode,
-                        show,
+                if let Some(index) = find_mode_slot(&mode_slots, window_id) {
+                    let visible = index == last_selected_monitor && last_mode_state.visible;
+                    update_mode_slot_or_exit(
+                        &mut mode_slots[index],
+                        &last_mode_state,
+                        visible,
                         control_flow,
                     );
                 }

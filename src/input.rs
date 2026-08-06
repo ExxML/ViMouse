@@ -4,7 +4,7 @@ use crate::config::{
     KEYS_SCROLL, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2,
     KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT,
     KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
-    KEY_TOGGLE_ICON, KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION,
+    KEY_TOGGLE_MODE_LINE, KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION,
     SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
@@ -407,7 +407,7 @@ fn apply_normal_mode_press(state: &mut SharedState, key: Key, tracker: &HookTrac
         KEY_MOUSE_3 => press_mouse_button(state, Button::Middle),
         KEY_MOUSE_4 => press_mouse_button(state, BUTTON_MOUSE_4),
         KEY_MOUSE_5 => press_mouse_button(state, BUTTON_MOUSE_5),
-        KEY_TOGGLE_ICON => state.show_icon = !state.show_icon,
+        KEY_TOGGLE_MODE_LINE => state.show_mode_line = !state.show_mode_line,
         KEY_TOGGLE_GRID => state.show_grid = !state.show_grid,
         KEY_TOGGLE_GRID_LETTERS => state.show_grid_letters = !state.show_grid_letters,
         KEY_MOVE_LEFT | KEY_MOVE_DOWN | KEY_MOVE_UP | KEY_MOVE_RIGHT => {
@@ -987,7 +987,7 @@ pub fn runtime_modifiers() -> impl Iterator<Item = Key> {
 #[derive(PartialEq)]
 struct UiStateSnapshot {
     mode: Mode,
-    show_icon: bool,
+    show_mode_line: bool,
     show_grid: bool,
     show_grid_letters: bool,
     show_overlays: bool,
@@ -1000,7 +1000,7 @@ struct UiStateSnapshot {
 fn ui_snapshot(state: &SharedState) -> UiStateSnapshot {
     UiStateSnapshot {
         mode: state.mode,
-        show_icon: state.show_icon,
+        show_mode_line: state.show_mode_line,
         show_grid: state.show_grid,
         show_grid_letters: state.show_grid_letters,
         show_overlays: state.show_overlays,
@@ -1023,7 +1023,7 @@ pub fn caps_lock_used_in_config() -> bool {
             KEY_MOUSE_4,
             KEY_MOUSE_5,
             KEY_CYCLE_MONITOR,
-            KEY_TOGGLE_ICON,
+            KEY_TOGGLE_MODE_LINE,
             KEY_TOGGLE_GRID,
             KEY_TOGGLE_GRID_LETTERS,
             KEY_MOVE_LEFT,

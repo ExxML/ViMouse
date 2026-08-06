@@ -66,24 +66,24 @@ pub const JUMP_GRID: [[Key; 5]; 3] = [
 pub const JUMP_GRID_DELAY: f64 = f64::INFINITY;
 
 // Overlay visibility
-pub const KEY_TOGGLE_ICON: Key = Key::Comma; // Toggle icon overlay
+pub const KEY_TOGGLE_MODE_LINE: Key = Key::Comma; // Toggle mode overlay line
 pub const KEY_TOGGLE_GRID: Key = Key::Dot; // Toggle jump grid overlay
 pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Slash; // Toggle grid cell letter overlay
 pub const KEY_TOGGLE_OVERLAY: Key = Key::AltGr; // Toggle all overlays (available in both Normal and Insert mode)
 
-// Icon overlay appearance
-pub const DEFAULT_ICON_ENABLED: bool = true; // Whether the icon overlay is enabled by default
+// Mode overlay appearance
+pub const DEFAULT_MODE_LINE_ENABLED: bool = true; // Whether the mode overlay line is enabled by default
 #[allow(dead_code)]
-pub enum IconOverlayPos {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
+pub enum ModeOverlayPos {
+    Top,
+    Right,
+    Left,
+    Bottom,
 }
-pub const ICON_OVERLAY_POSITION: IconOverlayPos = IconOverlayPos::BottomLeft;
-pub const ICON_OVERLAY_SIZE_MONITOR_FRACTION: f64 = 0.044; // Icon edge length as a fraction of the monitor's smaller dimension
-pub const ICON_OVERLAY_NORMAL_COLOR: [u8; 4] = [30, 160, 98, 255];
-pub const ICON_OVERLAY_INSERT_COLOR: [u8; 4] = [44, 55, 72, 255];
+pub const MODE_OVERLAY_POSITION: ModeOverlayPos = ModeOverlayPos::Bottom;
+pub const MODE_OVERLAY_THICKNESS: usize = 3; // Thickness of mode overlay line in pixels
+pub const MODE_OVERLAY_NORMAL_COLOR: [u8; 4] = [40, 150, 230, 255];
+pub const MODE_OVERLAY_INSERT_COLOR: [u8; 4] = [230, 150, 40, 255];
 
 // Grid overlay line appearance
 pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default
