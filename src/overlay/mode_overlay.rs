@@ -1,4 +1,6 @@
-use crate::config::{ModeOverlayPos, MODE_OVERLAY_POSITION, MODE_OVERLAY_THICKNESS};
+use crate::config::{
+    ModeOverlayPos, MODE_OVERLAY_POSITION, MODE_OVERLAY_THICKNESS_MONITOR_FRACTION,
+};
 use crate::state::{Mode, MonitorInfo};
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
@@ -166,9 +168,11 @@ fn sync_overlay_size(
     Ok(inner_size)
 }
 
-// Thickness is in physical pixels, matching GRID_THICKNESS; the extent follows the monitor.
-fn line_physical_size(extent: u32) -> PhysicalSize<u32> {
-    let thickness = (MODE_OVERLAY_THICKNESS as u32).max(1);
+// Both dimensions are physical pixels: the extent follows the monitor edge, while the
+// thickness is a fraction of the monitor height so the line looks the same on any display.
+fn line_physical_size(extent: u32, monitor_physical_height: f64) -> PhysicalSize<u32> {
+    let thickness =
+        ((monitor_physical_height * MODE_OVERLAY_THICKNESS_MONITOR_FRACTION).round() as u32).max(1);
     if MODE_OVERLAY_POSITION.is_horizontal() {
         PhysicalSize::new(extent.max(1), thickness)
     } else {
@@ -179,12 +183,15 @@ fn line_physical_size(extent: u32) -> PhysicalSize<u32> {
 #[cfg(target_os = "macos")]
 fn overlay_inner_size(monitor: &MonitorInfo) -> PhysicalSize<u32> {
     let extent = (overlay_extent_for_monitor(monitor) * monitor.scale_factor).round() as u32;
-    line_physical_size(extent)
+    line_physical_size(extent, monitor.height * monitor.scale_factor)
 }
 
 #[cfg(not(target_os = "macos"))]
 fn overlay_inner_size(monitor: &MonitorInfo) -> PhysicalSize<u32> {
-    line_physical_size(overlay_extent_for_monitor(monitor).round() as u32)
+    line_physical_size(
+        overlay_extent_for_monitor(monitor).round() as u32,
+        monitor.height,
+    )
 }
 
 #[cfg(target_os = "macos")]

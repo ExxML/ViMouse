@@ -81,9 +81,9 @@ pub enum ModeOverlayPos {
     Bottom,
 }
 pub const MODE_OVERLAY_POSITION: ModeOverlayPos = ModeOverlayPos::Bottom;
-pub const MODE_OVERLAY_THICKNESS: usize = 3; // Thickness of mode overlay line in pixels
-pub const MODE_OVERLAY_NORMAL_COLOR: [u8; 4] = [40, 150, 230, 255];
-pub const MODE_OVERLAY_INSERT_COLOR: [u8; 4] = [230, 150, 40, 255];
+pub const MODE_OVERLAY_THICKNESS_MONITOR_FRACTION: f64 = 0.006; // Mode line thickness as a fraction of the monitor's vertical dimension
+pub const MODE_OVERLAY_NORMAL_COLOR: [u8; 4] = [122, 162, 246, 255];
+pub const MODE_OVERLAY_INSERT_COLOR: [u8; 4] = [158, 206, 107, 255];
 
 // Grid overlay line appearance
 pub const DEFAULT_GRID_ENABLED: bool = false; // Whether the grid overlay is enabled by default
