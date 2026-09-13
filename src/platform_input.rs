@@ -555,6 +555,214 @@ pub mod macos_grab {
     }
 }
 
+// Windows' low-level hooks are grabbed directly rather than through rdev: rdev resolves a
+// printable name for every key press, and that lookup attaches to the foreground thread's input
+// queue, which discards the click history Windows needs to promote a second click into
+// WM_LBUTTONDBLCLK. ViMouse never reads the name, so skip it and keep double-clicks working.
+#[cfg(target_os = "windows")]
+pub mod windows_grab {
+    use rdev::{Button, Event, EventType, Key};
+    use std::time::SystemTime;
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, HC_ACTION, KBDLLHOOKSTRUCT, MSG,
+        MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+        WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+        WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+    };
+
+    type GrabCallback = Box<dyn FnMut(Event) -> Option<Event> + Send>;
+
+    const WHEEL_DELTA: i16 = 120;
+
+    static mut CALLBACK: Option<GrabCallback> = None;
+
+    unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            if let Some(event_type) = to_rdev_event(wparam as u32, lparam) {
+                let event = Event {
+                    event_type,
+                    time: SystemTime::now(),
+                    name: None,
+                };
+
+                #[allow(static_mut_refs)]
+                if let Some(callback) = CALLBACK.as_mut() {
+                    if callback(event).is_none() {
+                        // A non-zero return suppresses the event before any app sees it.
+                        return 1;
+                    }
+                }
+            }
+        }
+
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+    }
+
+    unsafe fn to_rdev_event(message: u32, lparam: LPARAM) -> Option<EventType> {
+        let mouse = || *(lparam as *const MSLLHOOKSTRUCT);
+        // The high word of mouseData holds the wheel delta (signed) or the X-button index.
+        let mouse_data_high = || (mouse().mouseData >> 16) as i16;
+        let key = || key_from_code((*(lparam as *const KBDLLHOOKSTRUCT)).vkCode);
+
+        Some(match message {
+            WM_KEYDOWN | WM_SYSKEYDOWN => EventType::KeyPress(key()),
+            WM_KEYUP | WM_SYSKEYUP => EventType::KeyRelease(key()),
+            WM_LBUTTONDOWN => EventType::ButtonPress(Button::Left),
+            WM_LBUTTONUP => EventType::ButtonRelease(Button::Left),
+            WM_RBUTTONDOWN => EventType::ButtonPress(Button::Right),
+            WM_RBUTTONUP => EventType::ButtonRelease(Button::Right),
+            WM_MBUTTONDOWN => EventType::ButtonPress(Button::Middle),
+            WM_MBUTTONUP => EventType::ButtonRelease(Button::Middle),
+            WM_XBUTTONDOWN => EventType::ButtonPress(Button::Unknown(mouse_data_high() as u8)),
+            WM_XBUTTONUP => EventType::ButtonRelease(Button::Unknown(mouse_data_high() as u8)),
+            WM_MOUSEMOVE => EventType::MouseMove {
+                x: mouse().pt.x as f64,
+                y: mouse().pt.y as f64,
+            },
+            WM_MOUSEWHEEL => EventType::Wheel {
+                delta_x: 0,
+                delta_y: (mouse_data_high() / WHEEL_DELTA) as i64,
+            },
+            WM_MOUSEHWHEEL => EventType::Wheel {
+                delta_x: (mouse_data_high() / WHEEL_DELTA) as i64,
+                delta_y: 0,
+            },
+            _ => return None,
+        })
+    }
+
+    pub fn run<F>(callback: F)
+    where
+        F: FnMut(Event) -> Option<Event> + Send + 'static,
+    {
+        unsafe {
+            CALLBACK = Some(Box::new(callback));
+
+            for hook_id in [WH_KEYBOARD_LL, WH_MOUSE_LL] {
+                if SetWindowsHookExW(hook_id, Some(hook_callback), std::ptr::null_mut(), 0)
+                    .is_null()
+                {
+                    eprintln!("input hook error: failed to install Windows hook {hook_id}");
+                    return;
+                }
+            }
+
+            // Low-level hooks are dispatched through this thread's message queue, so it must pump.
+            let mut message: MSG = std::mem::zeroed();
+            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {}
+        }
+    }
+
+    fn key_from_code(code: u32) -> Key {
+        match code {
+            0x08 => Key::Backspace,
+            0x09 => Key::Tab,
+            0x0D => Key::Return,
+            19 => Key::Pause,
+            20 => Key::CapsLock,
+            27 => Key::Escape,
+            32 => Key::Space,
+            33 => Key::PageUp,
+            34 => Key::PageDown,
+            35 => Key::End,
+            36 => Key::Home,
+            37 => Key::LeftArrow,
+            38 => Key::UpArrow,
+            39 => Key::RightArrow,
+            40 => Key::DownArrow,
+            44 => Key::PrintScreen,
+            45 => Key::Insert,
+            46 => Key::Delete,
+            48 => Key::Num0,
+            49 => Key::Num1,
+            50 => Key::Num2,
+            51 => Key::Num3,
+            52 => Key::Num4,
+            53 => Key::Num5,
+            54 => Key::Num6,
+            55 => Key::Num7,
+            56 => Key::Num8,
+            57 => Key::Num9,
+            65 => Key::KeyA,
+            66 => Key::KeyB,
+            67 => Key::KeyC,
+            68 => Key::KeyD,
+            69 => Key::KeyE,
+            70 => Key::KeyF,
+            71 => Key::KeyG,
+            72 => Key::KeyH,
+            73 => Key::KeyI,
+            74 => Key::KeyJ,
+            75 => Key::KeyK,
+            76 => Key::KeyL,
+            77 => Key::KeyM,
+            78 => Key::KeyN,
+            79 => Key::KeyO,
+            80 => Key::KeyP,
+            81 => Key::KeyQ,
+            82 => Key::KeyR,
+            83 => Key::KeyS,
+            84 => Key::KeyT,
+            85 => Key::KeyU,
+            86 => Key::KeyV,
+            87 => Key::KeyW,
+            88 => Key::KeyX,
+            89 => Key::KeyY,
+            90 => Key::KeyZ,
+            91 => Key::MetaLeft,
+            96 => Key::Kp0,
+            97 => Key::Kp1,
+            98 => Key::Kp2,
+            99 => Key::Kp3,
+            100 => Key::Kp4,
+            101 => Key::Kp5,
+            102 => Key::Kp6,
+            103 => Key::Kp7,
+            104 => Key::Kp8,
+            105 => Key::Kp9,
+            106 => Key::KpMultiply,
+            107 => Key::KpPlus,
+            109 => Key::KpMinus,
+            110 => Key::KpDelete,
+            111 => Key::KpDivide,
+            112 => Key::F1,
+            113 => Key::F2,
+            114 => Key::F3,
+            115 => Key::F4,
+            116 => Key::F5,
+            117 => Key::F6,
+            118 => Key::F7,
+            119 => Key::F8,
+            120 => Key::F9,
+            121 => Key::F10,
+            122 => Key::F11,
+            123 => Key::F12,
+            144 => Key::NumLock,
+            145 => Key::ScrollLock,
+            160 => Key::ShiftLeft,
+            161 => Key::ShiftRight,
+            162 => Key::ControlLeft,
+            163 => Key::ControlRight,
+            164 => Key::Alt,
+            165 => Key::AltGr,
+            186 => Key::SemiColon,
+            187 => Key::Equal,
+            188 => Key::Comma,
+            189 => Key::Minus,
+            190 => Key::Dot,
+            191 => Key::Slash,
+            192 => Key::BackQuote,
+            219 => Key::LeftBracket,
+            220 => Key::BackSlash,
+            221 => Key::RightBracket,
+            222 => Key::Quote,
+            226 => Key::IntlBackslash,
+            other => Key::Unknown(other),
+        }
+    }
+}
+
 pub struct InputEmitter {
     platform: PlatformEmitter,
     logged_error: bool,

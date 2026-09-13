@@ -15,7 +15,7 @@ use crate::platform_input::{
     InputEmitter, BUTTON_MOUSE_4, BUTTON_MOUSE_5,
 };
 use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use rdev::grab;
 use rdev::{Button, Event, EventType, Key};
 use std::collections::{HashMap, HashSet};
@@ -73,7 +73,12 @@ pub fn spawn_input_hook(shared: Shared, waker: MotionWaker, ui_waker: UiWaker) {
                 shutdown_platform_input();
             }
 
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
+            crate::platform_input::windows_grab::run(move |event| {
+                handle_hook_event(&shared, &tracker, &waker, &ui_waker, event)
+            });
+
+            #[cfg(target_os = "linux")]
             if let Err(error) =
                 grab(move |event| handle_hook_event(&shared, &tracker, &waker, &ui_waker, event))
             {
