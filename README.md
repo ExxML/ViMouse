@@ -39,9 +39,9 @@ ViMouse has two modes, toggled like Vim:
 | Mode | Key | Indicator | Description |
 |------|-----|-----------|-------------|
 | **Normal** | `CapsLock` | Blue | ViMouse intercepts keys (cursor control active) |
-| **Insert** | `i` | Orange | Keys pass through to apps normally |
+| **Insert** | `i` | Green | Keys pass through to apps normally |
 
-A thin line along the bottom edge of your screen shows the current mode by color.
+A thin line along the bottom edge of your screen shows the current mode by color. Press `Comma` to toggle its visibilty.
 
 **Unless otherwise specified, ViMouse keybinds only work in Normal mode; Insert mode is reserved for typing.**
 
@@ -64,13 +64,13 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 
 | Modifier | Effect |
 |----------|--------|
-| `Space` (hold) | 3× speed |
-| `Left Alt` (hold) | 0.3× speed |
+| `Space` (hold) | 5× speed |
+| `Left Alt` (hold) | 0.5× speed |
 
-Tap a move key to move the cursor 100 logical pts/sec. Hold to move 500 logical pts/sec.
+Tap a move key to move the cursor 60 logical pts/sec. Hold to move 300 logical pts/sec.
 - Speeds are in logical points (DPI-normalized) so the cursor feels the same across monitors of differing DPI.
 
-All values and configurations are modifiable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
+Mouse speed values are configurable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
 
 For example:
 - If you want to disable mouse acceleration, set `CURSOR_ACCELERATION` to 0.
@@ -88,7 +88,9 @@ Hold `Left/Right Shift` + `H` / `J` / `K` / `L` to scroll.
 
 Scrolling features the same `Space` / `Left Alt` speed modifiers as [Cursor Movement](#cursor-movement).
 
-There is no scroll acceleration by default, but this can be modified in `src/config.rs`.
+Scrolling holds a steady 10 units/sec for the first 3 seconds, then accelerates by 20 units/sec² for as long as you keep holding.
+
+Feel free to configure the scroll speed values in `src/config.rs`.
 
 ---
 
@@ -117,9 +119,9 @@ The screen is divided into a 5×3 grid - press the labeled key to teleport the c
 │   Z   │   X   │   C   │   V   │   B   │
 └───────┴───────┴───────┴───────┴───────┘
 ```
-- Each cell is also divided into a 5×3 grid. Press a second jump grid key to jump to a subcell within the current cell.
-- Press `Slash` to toggle a reference jump grid overlay to serve as a guide for where to jump.
-- Press `Period` to toggle a reference grid of letters that show where you will jump for each letter.
+- Each cell is also divided into a 5×3 grid. Press a second jump grid key to jump to a subcell within the current cell. By default the subcell jump stays primed indefinitely; set `JUMP_GRID_DELAY` to a number of seconds to time it out, or to 0.0 to disable subcell jumps.
+- Press `Period` to toggle a reference jump grid overlay to serve as a guide for where to jump.
+- Press `Slash` to toggle a reference grid of letters that show where you will jump for each letter.
 
 Press `n` to cycle focus to another monitor, moving the cursor, mode line, and jump grid.
 
