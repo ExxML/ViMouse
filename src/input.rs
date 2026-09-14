@@ -1,11 +1,11 @@
 use crate::config::{
-    ACCEL_DELAY_SECS, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
+    CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_ACCEL_DELAY_SECS, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
     FAST_MULTIPLIER, INSERT_MODE_HIDE_CURSOR, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK,
     KEYS_SCROLL, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2,
     KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT,
     KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
     KEY_TOGGLE_MODE_LINE, KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION,
-    SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    SCROLL_ACCEL_DELAY_SECS, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -702,12 +702,14 @@ fn accumulate_actions(state: &mut SharedState, delta_seconds: f64, actions: &mut
     if scroll_mode_active(&state.pressed_keys) {
         let speed_x = acceleration_speed(
             elapsed_x,
+            SCROLL_ACCEL_DELAY_SECS,
             SCROLL_BASE_SPEED,
             SCROLL_ACCELERATION,
             SCROLL_MAX_SPEED,
         ) * speed_multiplier;
         let speed_y = acceleration_speed(
             elapsed_y,
+            SCROLL_ACCEL_DELAY_SECS,
             SCROLL_BASE_SPEED,
             SCROLL_ACCELERATION,
             SCROLL_MAX_SPEED,
@@ -723,12 +725,14 @@ fn accumulate_actions(state: &mut SharedState, delta_seconds: f64, actions: &mut
 
     let speed_x = acceleration_speed(
         elapsed_x,
+        CURSOR_ACCEL_DELAY_SECS,
         CURSOR_BASE_SPEED,
         CURSOR_ACCELERATION,
         CURSOR_MAX_SPEED,
     ) * speed_multiplier;
     let speed_y = acceleration_speed(
         elapsed_y,
+        CURSOR_ACCEL_DELAY_SECS,
         CURSOR_BASE_SPEED,
         CURSOR_ACCELERATION,
         CURSOR_MAX_SPEED,
@@ -780,11 +784,11 @@ fn key_elapsed(state: &SharedState, key: Key, now: Instant) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn acceleration_speed(elapsed_secs: f64, base: f64, accel: f64, max: f64) -> f64 {
-    if elapsed_secs < ACCEL_DELAY_SECS {
+fn acceleration_speed(elapsed_secs: f64, delay_secs: f64, base: f64, accel: f64, max: f64) -> f64 {
+    if elapsed_secs < delay_secs {
         base
     } else {
-        (base + accel * (elapsed_secs - ACCEL_DELAY_SECS)).min(max)
+        (base + accel * (elapsed_secs - delay_secs)).min(max)
     }
 }
 
