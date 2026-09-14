@@ -73,7 +73,8 @@ pub struct SharedState {
     pub move_key_pressed_at: HashMap<Key, Instant>,
     pub pending_subcell: Option<(u8, u8, Instant)>, // Pending subcell state: (cell_col, cell_row, timestamp of first jump)
     pub marks: HashMap<Key, Point>, // Mark key -> cursor position in virtual-desktop coords
-    pub emitted_cursor: Option<Point>,
+    pub emitted_cursors: Vec<Point>,
+    pub pending_warp: Option<PendingWarp>,
 }
 
 impl SharedState {
@@ -95,7 +96,8 @@ impl SharedState {
             move_key_pressed_at: HashMap::new(),
             pending_subcell: None,
             marks: HashMap::new(),
-            emitted_cursor: None,
+            emitted_cursors: Vec::new(),
+            pending_warp: None,
         }
     }
 }
@@ -104,6 +106,16 @@ pub type Shared = Arc<Mutex<SharedState>>;
 pub type MotionWaker = Arc<Condvar>;
 // Sends a () event to wake the winit event loop when UI-visible state changes.
 pub type UiWaker = EventLoopProxy<()>;
+
+/// A cursor warp in progress: `steps_left` lead-in moves stepping away from `origin`, then a
+/// final move to `destination`.
+#[derive(Clone, Copy)]
+pub struct PendingWarp {
+    pub origin: Point,
+    pub destination: Point,
+    pub step: Point,
+    pub steps_left: u8,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Action {

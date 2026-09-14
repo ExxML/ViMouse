@@ -14,7 +14,7 @@ use crate::platform_input::{
     movement_device_scale, scroll_direction_sign, shutdown_platform_input, simulate_input,
     InputEmitter, BUTTON_MOUSE_4, BUTTON_MOUSE_5,
 };
-use crate::state::{Action, Mode, MotionWaker, Point, Shared, SharedState, UiWaker};
+use crate::state::{Action, Mode, MotionWaker, PendingWarp, Point, Shared, SharedState, UiWaker};
 #[cfg(target_os = "linux")]
 use rdev::grab;
 use rdev::{Button, Event, EventType, Key};
@@ -161,9 +161,12 @@ fn handle_hook_event(
         }
         EventType::MouseMove { x, y } => {
             let mut state = shared.lock().expect("shared state poisoned");
-            if state.emitted_cursor.is_some_and(|emitted| {
+            if let Some(index) = state.emitted_cursors.iter().position(|emitted| {
                 emitted.x.round() == x.round() && emitted.y.round() == y.round()
             }) {
+                // Drop this echo and everything it superseded, so a stale point can't
+                // swallow a later real move to the same spot.
+                state.emitted_cursors.drain(..=index);
                 return Some(event);
             }
             let prev_monitor = state.selected_monitor;
@@ -442,8 +445,7 @@ fn apply_mark_press(state: &mut SharedState, key: Key, unmark_held: bool) {
     }
 
     if let Some(target) = state.marks.get(&key).copied() {
-        update_cursor(state, target);
-        state.pending_actions.push(Action::MouseMove(state.cursor));
+        queue_warp(state, target);
     } else {
         state.marks.insert(key, state.cursor);
     }
@@ -492,9 +494,44 @@ fn cycle_monitor(state: &mut SharedState) {
     }
 
     if let Some(monitor) = state.monitors.get(state.selected_monitor).copied() {
-        state.cursor = monitor.center();
-        state.pending_actions.push(Action::MouseMove(state.cursor));
+        queue_warp(state, monitor.center());
     }
+}
+
+// Lead-in moves emitted before a warp's destination while a button is held, one per tick, and
+// their size. Four two-pixel steps are the least that reads as a real drag to apps that only leave
+// a snapped or maximized layout once one is under way, and stay imperceptible.
+const WARP_LEAD_IN_STEPS: u8 = 4;
+const WARP_LEAD_IN_STEP_PX: f64 = 2.0;
+
+// Warps the cursor to `target`, queueing the moves needed to get there.
+//
+// While a button is held, apps that drag their own window from mouse moves (Chromium title bars)
+// anchor the drag on the first move after the press and displace by every move after it, so a lone
+// teleport anchors at the destination and drags nothing. Worse, a maximized window only restores
+// once a drag is recognized, and restoring on the teleport itself re-centres it on the cursor and
+// loses the grab offset. A short ramp toward the target, one step per tick, opens a real drag
+// first, leaving the teleport as pure displacement that keeps the window under the cursor.
+fn queue_warp(state: &mut SharedState, target: Point) {
+    let origin = state.cursor;
+    update_cursor(state, target);
+    let destination = state.cursor;
+
+    if (state.left_button_down || state.right_button_down) && destination != origin {
+        let step = Point {
+            x: (destination.x - origin.x).signum() * WARP_LEAD_IN_STEP_PX,
+            y: (destination.y - origin.y).signum() * WARP_LEAD_IN_STEP_PX,
+        };
+        state.pending_warp = Some(PendingWarp {
+            origin,
+            destination,
+            step,
+            steps_left: WARP_LEAD_IN_STEPS,
+        });
+        return;
+    }
+
+    state.pending_actions.push(Action::MouseMove(destination));
 }
 
 fn queue_jump(state: &mut SharedState, key: Key) {
@@ -505,8 +542,7 @@ fn queue_jump(state: &mut SharedState, key: Key) {
     if let Some((cell_col, cell_row, pressed_at)) = state.pending_subcell.take() {
         if pressed_at.elapsed().as_secs_f64() <= JUMP_GRID_DELAY {
             if let Some(target) = subcell_target(monitor, cell_col, cell_row, key) {
-                update_cursor(state, target);
-                state.pending_actions.push(Action::MouseMove(state.cursor));
+                queue_warp(state, target);
                 return;
             }
         }
@@ -517,8 +553,7 @@ fn queue_jump(state: &mut SharedState, key: Key) {
         return;
     };
 
-    update_cursor(state, target);
-    state.pending_actions.push(Action::MouseMove(state.cursor));
+    queue_warp(state, target);
     state.pending_subcell = Some((col, row, Instant::now()));
 }
 
@@ -621,14 +656,32 @@ fn accumulate_actions(state: &mut SharedState, delta_seconds: f64, actions: &mut
     // cursor movement, clicks, and scrolling stay serialized and predictable.
     actions.append(&mut state.pending_actions);
 
+    // One step of a warp in progress: a lead-in move, or the destination once they are done
+    // (see queue_warp). Spreading them over ticks keeps them from coalescing into one move.
+    if let Some(mut warp) = state.pending_warp {
+        let next = if let Some(remaining) = warp.steps_left.checked_sub(1) {
+            warp.steps_left = remaining;
+            state.pending_warp = Some(warp);
+            let taken = (WARP_LEAD_IN_STEPS - remaining) as f64;
+            Point {
+                x: warp.origin.x + warp.step.x * taken,
+                y: warp.origin.y + warp.step.y * taken,
+            }
+        } else {
+            state.pending_warp = None;
+            warp.destination
+        };
+        actions.push(Action::MouseMove(next));
+    }
+
     if state.mode != Mode::Normal {
-        state.motion_needed = false;
+        state.motion_needed = state.pending_warp.is_some();
         return;
     }
 
     let direction = normalized_direction(&state.pressed_keys);
     if direction.x == 0.0 && direction.y == 0.0 {
-        state.motion_needed = false;
+        state.motion_needed = state.pending_warp.is_some();
         return;
     }
 
@@ -702,14 +755,21 @@ fn accumulate_actions(state: &mut SharedState, delta_seconds: f64, actions: &mut
     }
 }
 
-// Remember the last move we are about to emit, so the hook can recognize its echo.
+// Remember the moves we are about to emit, so the hook can recognize their echoes. Only the
+// newest few are kept, since platforms whose grab never replays synthetic events (Linux) would
+// otherwise grow this without bound.
 fn record_emitted_cursor(state: &mut SharedState, actions: &[Action]) {
-    if let Some(Action::MouseMove(point)) = actions
-        .iter()
-        .rfind(|action| matches!(action, Action::MouseMove(_)))
-    {
-        state.emitted_cursor = Some(*point);
-    }
+    const MAX_TRACKED: usize = 4;
+
+    state
+        .emitted_cursors
+        .extend(actions.iter().filter_map(|action| match action {
+            Action::MouseMove(point) => Some(*point),
+            _ => None,
+        }));
+
+    let excess = state.emitted_cursors.len().saturating_sub(MAX_TRACKED);
+    state.emitted_cursors.drain(..excess);
 }
 
 fn key_elapsed(state: &SharedState, key: Key, now: Instant) -> f64 {
