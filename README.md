@@ -67,7 +67,7 @@ Hold `H` / `J` / `K` / `L` to move the cursor:
 | `Space` (hold) | 5× speed |
 | `Left Alt` (hold) | 0.5× speed |
 
-Tap a move key to move the cursor 60 logical pts/sec. Hold to move 300 logical pts/sec.
+Tap a move key to move the cursor 50 logical pts/sec. Hold to move 300 logical pts/sec.
 - Speeds are in logical points (DPI-normalized) so the cursor feels the same across monitors of differing DPI.
 
 Mouse speed values are configurable in `src/config.rs`. Feel free to play around with whatever settings feel right to you. 
@@ -88,7 +88,7 @@ Hold `Left/Right Shift` + `H` / `J` / `K` / `L` to scroll.
 
 Scrolling features the same `Space` / `Left Alt` speed modifiers as [Cursor Movement](#cursor-movement).
 
-Scrolling holds a steady 10 units/sec for the first 3 seconds, then accelerates by 20 units/sec² for as long as you keep holding.
+Scrolling holds a steady 8 units/sec for the first 3 seconds, then accelerates by 20 units/sec² for as long as you keep holding.
 
 Feel free to configure the scroll speed values in `src/config.rs`.
 
