@@ -72,7 +72,6 @@ pub const KEY_TOGGLE_GRID_LETTERS: Key = Key::Slash; // Toggle grid cell letter 
 pub const KEY_TOGGLE_OVERLAY: Key = Key::AltGr; // Toggle all overlays (available in both Normal and Insert mode)
 
 // Mode overlay appearance
-pub const DEFAULT_MODE_LINE_ENABLED: bool = true; // Whether the mode overlay line is enabled by default
 #[allow(dead_code)]
 pub enum ModeOverlayPos {
     Top,
@@ -81,6 +80,7 @@ pub enum ModeOverlayPos {
     Bottom,
 }
 pub const MODE_OVERLAY_POSITION: ModeOverlayPos = ModeOverlayPos::Bottom;
+pub const DEFAULT_MODE_LINE_ENABLED: bool = true; // Whether the mode overlay line is enabled by default
 pub const MODE_OVERLAY_THICKNESS_MONITOR_FRACTION: f64 = 0.004; // Mode line thickness as a fraction of the monitor's vertical dimension
 pub const MODE_OVERLAY_NORMAL_COLOR: [u8; 4] = [122, 162, 246, 255];
 pub const MODE_OVERLAY_INSERT_COLOR: [u8; 4] = [162, 246, 122, 255];
