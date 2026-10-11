@@ -21,6 +21,7 @@ Supports macOS, Windows, and Linux.
     - [Prerequisites](#prerequisites)
     - [macOS](#macos)
     - [Windows / Linux](#windows--linux)
+  - [Limitations](#limitations)
   - [Platform Notes](#platform-notes)
 - [License](#license)
 
@@ -169,7 +170,7 @@ These keybinds are available in both Normal and Insert modes.
 1. Download the compressed binary for your OS and architecture from [Releases](https://github.com/ExxML/ViMouse/releases/latest).
 2. Extract and run the executable (`ViMouse.app` on macOS, `vimouse.exe` on Windows, `vimouse` on Linux).
 
-See [Platform Notes](#platform-notes) for permissions and known limitations.
+See [Limitations](#limitations) and [Platform Notes](#platform-notes) for permissions and known limitations.
 
 ### Option 2: Build From Source
 
@@ -197,6 +198,34 @@ cargo build --release
 ```
 
 Run from `target/release/vimouse.exe` (Windows) or `target/release/vimouse` (Linux).
+
+### Limitations
+
+ViMouse shares the keyboard with your OS and apps, so some key combinations behave in ways you might not expect.
+
+**Modifier keys**
+- **Modifier order matters.** ViMouse handles a modifier combo based on the *first* modifier you press. To combine a modifier with scrolling, press `Shift` first: `Shift` → `Ctrl` → `J` sends Ctrl+scroll down, but `Ctrl` → `Shift` → `J` sends `Ctrl+Shift+J` to the focused app (e.g. opens Chrome's DevTools console). The same goes for `Cmd`/`Win`, and for `Left Alt` slow movement.
+- **Holding a modifier pauses most keybinds.** While `Ctrl`, `Alt`, `Shift`, or `Cmd`/`Win` is held, keys go to the focused app so shortcuts like `Ctrl+C` work. Only `H`/`J`/`K`/`L` (when `Shift` or `Left Alt` was pressed first), left/right click, and unmarking stay with ViMouse. Everything else (jump grid, marks, `i`, `n`, overlay toggles, middle/back/forward click) goes to the app: `Shift` + `Q` types `Q` into a text field, and `Ctrl` + `M` never middle-clicks.
+- **`Shift` and `Left Alt` pressed mid-action are hidden from apps.** If you press either while holding another ViMouse key (e.g. while moving or holding a click), apps don't see it until you physically release it, even after you stop moving or switch to Insert mode (hold `J`, press `Shift`, release `J`, press `i`, and typed letters come out lowercase). For Shift+click or Alt+click, press the modifier before the click key. `Ctrl` and `Cmd`/`Win` are never hidden.
+- **Modifier+drag is limited.** With `Shift` held, `H`/`J`/`K`/`L` scroll instead of move, and `Left Alt` is hidden from apps while the cursor moves, so Shift+drag and Alt+drag aren't possible. For Ctrl+drag (or Cmd+drag), hold a move key *before* pressing `Ctrl`, then the click key; pressing `Ctrl` first sends the move keys to the app.
+- **Extra `Shift`/`Alt` events.** To keep scrolls and slow movement clean, ViMouse sends a synthetic release of a held `Shift`/`Left Alt` when movement starts and a synthetic press when it stops. Apps that react to bare modifier taps (e.g. double-Shift search in JetBrains IDEs) may trigger.
+
+**Reserved keys**
+- **`Space` is always captured in Normal mode**, even with a modifier held: `Cmd+Space` (Spotlight), `Ctrl+Space`, `Alt+Space`, and `Win+Space` only work in Insert mode.
+- **`;` and `'` are always captured in Normal mode**: `Ctrl` + `;` sends Ctrl+left click, never `Ctrl+;`.
+- **`Left Alt` + `H`/`J`/`K`/`L`** slow-move in Normal mode, and in Insert mode `Left Alt` + `H`/`J`/`K`/`L`/`U`/`O` are always [shortcuts](#shortcuts), even with other modifiers held. App shortcuts on those combos and macOS Option characters (e.g. `Option+U` umlaut, `Option+O` → `ø`) are unavailable.
+- **`Right Alt` (AltGr) toggles the overlay in both modes** and only reaches apps if another modifier is held first, so it can't be used as a second Alt key or, on macOS (`Right Option`) and Linux, to type special characters. On Windows layouts with AltGr (e.g. German), AltGr arrives with a fake `Ctrl` press, so it types normally but can't toggle the overlay.
+- **`Caps Lock` only enters Normal mode.** It is always captured (in both modes, with any modifier) and its toggle is turned off at launch, so it can't type capitals or switch input sources.
+- **`Left Ctrl + Left Alt + Left Shift + Q` always quits ViMouse**, so apps never receive it.
+- **Unbound keys do nothing in Normal mode.** Letters, numbers, and punctuation without a ViMouse binding are swallowed. These always pass through: `Enter`, `Esc`, `Tab`, `Backspace`, `Delete`, `Insert`, `Home`/`End`, `Page Up`/`Page Down`, arrows, `F1`–`F12`, numpad, `Print Screen`, `Scroll Lock`, `Pause`, `Num Lock`, and media keys.
+
+**Jump grid and marks**
+- **The next grid key after a cell jump is always a subcell jump**, even minutes later. To jump to a different cell, press any other ViMouse key first (e.g. tap a move key), or set `JUMP_GRID_DELAY` to a timeout. Moving the physical mouse doesn't reset it.
+- **Unmarking needs `Left Shift` alone.** `Right Shift` + `1` types `!`, any extra modifier sends the combo to the app, and a `Left Shift` pressed while another ViMouse key is held is hidden (see above), so the mark key sets/jumps instead of unmarking.
+
+**Platform-specific**
+- **Windows: bindings follow your layout's letters, not physical positions.** On AZERTY, QWERTZ, Dvorak, etc. each binding moves to wherever its letter is (e.g. the jump grid is scrambled on AZERTY). macOS and Linux bind by physical QWERTY position.
+- **`Right Win` (Windows) and `Fn`/Globe (macOS) aren't recognized as modifiers.** In Normal mode, `Right Win` + key and Globe + key (e.g. Globe+E emoji picker) trigger the ViMouse binding instead of the OS shortcut. Use `Left Win`, or switch to Insert mode.
 
 ### Platform Notes
 
