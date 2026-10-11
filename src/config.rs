@@ -119,7 +119,10 @@ pub const KEY_UNMARK_ALL: Key = Key::BackQuote; // KEY_UNMARK + KEY_UNMARK_ALL t
 // Insert mode shortcuts
 pub const SHORTCUTS_ENABLED: bool = true; // Whether arrow shortcuts are enabled
 pub const KEY_SHORTCUTS: Key = Key::Alt; // Hold + KEY_SHORTCUT keys to trigger shortcuts
-                                         // KEY_SHORTCUTS + KEY_MOVE keys to send arrow key inputs
+pub const KEY_SHORTCUT_ARROW_LEFT: Key = Key::KeyH;
+pub const KEY_SHORTCUT_ARROW_DOWN: Key = Key::KeyJ;
+pub const KEY_SHORTCUT_ARROW_UP: Key = Key::KeyK;
+pub const KEY_SHORTCUT_ARROW_RIGHT: Key = Key::KeyL;
 pub const KEY_SHORTCUT_HOME: Key = Key::KeyU;
 pub const KEY_SHORTCUT_END: Key = Key::KeyO;
 
