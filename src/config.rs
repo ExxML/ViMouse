@@ -37,8 +37,8 @@ pub const KEY_MOVE_RIGHT: Key = Key::KeyL;
 pub const KEY_MOUSE_1: Key = Key::SemiColon; // Left click
 pub const KEY_MOUSE_2: Key = Key::Quote; // Right click
 pub const KEY_MOUSE_3: Key = Key::KeyM; // Middle (scroll) click
-pub const KEY_MOUSE_4: Key = Key::KeyO; // Back (X1) click
-pub const KEY_MOUSE_5: Key = Key::KeyP; // Forward (X2) click
+pub const KEY_MOUSE_4: Key = Key::KeyU; // Back (X1) click
+pub const KEY_MOUSE_5: Key = Key::KeyO; // Forward (X2) click
 pub const KEYS_SCROLL: &[Key] = &[Key::ShiftLeft, Key::ShiftRight]; // Hold any KEYS_SCROLL to scroll
 
 // Speed modifier keys for cursor movement and scrolling

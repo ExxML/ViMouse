@@ -101,8 +101,8 @@ Feel free to configure the scroll speed values in `src/config.rs`.
 | `;` | Left click |
 | `'` | Right click |
 | `M` | Middle (scroll) click |
-| `O` | Back (X1) click |
-| `P` | Forward (X2) click |
+| `U` | Back (X1) click |
+| `O` | Forward (X2) click |
 
 ---
 
