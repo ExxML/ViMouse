@@ -47,33 +47,25 @@ pub fn simulate_input(event_type: &EventType) -> Result<(), String> {
     let _guard = SIMULATE_LOCK.lock().expect("simulate lock poisoned");
     #[cfg(target_os = "macos")]
     if let EventType::KeyPress(key) | EventType::KeyRelease(key) = *event_type {
-        if let Some(code) = macos_arrow_keycode(key) {
-            return simulate_arrow_key(code, matches!(event_type, EventType::KeyPress(_)));
+        if modifier_flag(key).is_empty() {
+            return simulate_shortcut_key(key, matches!(event_type, EventType::KeyPress(_)));
         }
     }
     simulate(event_type).map_err(|_| "rdev input simulation failed".to_string())
 }
 
+// Synthetic non-modifier keys (shortcut outputs) inherit the flags of physically held modifiers;
+// shed KEY_SHORTCUTS's (ghosted while shortcuts are sent) so Option+K arrives as Up, not Option+Up.
 #[cfg(target_os = "macos")]
-fn macos_arrow_keycode(key: rdev::Key) -> Option<u16> {
-    match key {
-        rdev::Key::LeftArrow => Some(123),
-        rdev::Key::RightArrow => Some(124),
-        rdev::Key::DownArrow => Some(125),
-        rdev::Key::UpArrow => Some(126),
-        _ => None,
-    }
-}
-
-// Synthetic keys inherit the flags of physically held modifiers; shed KEY_ARROW_SHORTCUT's
-// (ghosted while arrows are sent) so Option+K arrives as Up, not Option+Up.
-#[cfg(target_os = "macos")]
-fn simulate_arrow_key(code: u16, is_press: bool) -> Result<(), String> {
+fn simulate_shortcut_key(key: rdev::Key, is_press: bool) -> Result<(), String> {
+    let code = (0..128)
+        .find(|&code| macos_grab::key_from_code(code) == key)
+        .ok_or_else(|| format!("no macOS keycode for {key:?}"))?;
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "CGEventSource creation failed".to_string())?;
     let event = CGEvent::new_keyboard_event(source, code, is_press)
         .map_err(|_| "CGEvent keyboard event creation failed".to_string())?;
-    event.set_flags(event.get_flags() & !modifier_flag(crate::config::KEY_ARROW_SHORTCUT));
+    event.set_flags(event.get_flags() & !modifier_flag(crate::config::KEY_SHORTCUTS));
     event.post(CGEventTapLocation::HID);
     Ok(())
 }
@@ -397,7 +389,7 @@ pub mod macos_grab {
         flags & modifier_flag != 0
     }
 
-    fn key_from_code(code: u16) -> Key {
+    pub(super) fn key_from_code(code: u16) -> Key {
         if caps_lock_remap::CAPS_LOCK_REMAP_ACTIVE.load(Ordering::Acquire)
             && code == caps_lock_remap::VKEY_F18
         {
