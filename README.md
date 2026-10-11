@@ -142,6 +142,12 @@ Marks are custom cursor positions you set and jump back to, like Vim marks. A la
 
 ---
 
+### Arrow Shortcut
+
+In Insert mode, hold `Left Alt` and press `H` / `J` / `K` / `L` to send the Left / Down / Up / Right arrow keys. Other held modifiers carry over (e.g. `Ctrl + Left Alt + H` sends `Ctrl + Left`).
+
+---
+
 ### Other Controls
 
 These keybinds are available in both Normal and Insert modes.

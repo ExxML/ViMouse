@@ -1,11 +1,12 @@
 use crate::config::{
-    CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_ACCEL_DELAY_SECS, CURSOR_BASE_SPEED, CURSOR_MAX_SPEED,
-    FAST_MULTIPLIER, INSERT_MODE_HIDE_CURSOR, JUMP_GRID, JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK,
-    KEYS_SCROLL, KEY_CYCLE_MONITOR, KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2,
-    KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5, KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT,
-    KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SLOW, KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS,
-    KEY_TOGGLE_MODE_LINE, KEY_TOGGLE_OVERLAY, KEY_UNMARK, KEY_UNMARK_ALL, SCROLL_ACCELERATION,
-    SCROLL_ACCEL_DELAY_SECS, SCROLL_BASE_SPEED, SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
+    ARROW_SHORTCUT_ENABLED, CHORD_QUIT, CURSOR_ACCELERATION, CURSOR_ACCEL_DELAY_SECS,
+    CURSOR_BASE_SPEED, CURSOR_MAX_SPEED, FAST_MULTIPLIER, INSERT_MODE_HIDE_CURSOR, JUMP_GRID,
+    JUMP_GRID_DELAY, KEYS_EXEMPT, KEYS_MARK, KEYS_SCROLL, KEY_ARROW_SHORTCUT, KEY_CYCLE_MONITOR,
+    KEY_FAST, KEY_INSERT_MODE, KEY_MOUSE_1, KEY_MOUSE_2, KEY_MOUSE_3, KEY_MOUSE_4, KEY_MOUSE_5,
+    KEY_MOVE_DOWN, KEY_MOVE_LEFT, KEY_MOVE_RIGHT, KEY_MOVE_UP, KEY_NORMAL_MODE, KEY_SLOW,
+    KEY_TOGGLE_GRID, KEY_TOGGLE_GRID_LETTERS, KEY_TOGGLE_MODE_LINE, KEY_TOGGLE_OVERLAY, KEY_UNMARK,
+    KEY_UNMARK_ALL, SCROLL_ACCELERATION, SCROLL_ACCEL_DELAY_SECS, SCROLL_BASE_SPEED,
+    SCROLL_MAX_SPEED, SLOW_MULTIPLIER, TICK_RATE_HZ,
 };
 use crate::monitor::{clamp_and_find_monitor, monitor_index_for_point};
 #[cfg(target_os = "macos")]
@@ -38,8 +39,8 @@ const MOVE_KEYS: [Key; 4] = [KEY_MOVE_LEFT, KEY_MOVE_DOWN, KEY_MOVE_UP, KEY_MOVE
 // is hidden from the OS until its physical release; the release is hidden too.
 //
 // Ghosted: a forwarded movement modifier is temporarily hidden with a synthetic key-release
-// while ViMouse moves or scrolls, then restored with a synthetic key-press - see
-// sync_movement_modifier_ghosting.
+// while ViMouse moves or scrolls (KEY_ARROW_SHORTCUT: while it sends arrows), then restored
+// with a synthetic key-press - see sync_modifier_ghosting.
 #[derive(Default)]
 struct HookTracker {
     held_keys: HashSet<Key>,
@@ -48,6 +49,8 @@ struct HookTracker {
     forwarded_modifiers: Vec<Key>,
     swallowed_modifiers: HashSet<Key>,
     ghosted_modifiers: HashSet<Key>,
+    // Move keys whose press sent an arrow key (arrow shortcut); their repeats and release follow.
+    arrow_keys: HashSet<Key>,
     // Windows/macOS only: their low-level hooks re-observe our synthetic events; Linux's grab doesn't.
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     passthrough_key_events: Vec<(Key, bool)>,
@@ -226,9 +229,11 @@ fn handle_key_event(
 //         Shift then Ctrl then J emits Ctrl+scroll.
 //       - KEY_MOUSE_1/2: the synthetic click carries whatever modifiers the OS still sees
 //         (Ctrl+click, Shift+click); movement modifiers are ghosted while moving, so a
-//         mid-move click is a plain click (see sync_movement_modifier_ghosting).
+//         mid-move click is a plain click (see sync_modifier_ghosting).
 //       - Mark keys and KEY_UNMARK_ALL while KEY_UNMARK is active (unmark / unmark all,
 //         see unmark_held).
+//   - Insert mode passes everything through, except move keys while KEY_ARROW_SHORTCUT is
+//     held, regardless of other modifiers: they send arrow keys (Ctrl+Alt+K sends Ctrl+Up).
 //   - The quit chord fires in both modes, regardless of modifiers.
 fn handle_key_press(
     shared: &Shared,
@@ -244,6 +249,9 @@ fn handle_key_press(
     update_runtime_modifier_state(&mut state, key, true);
 
     if is_repeat {
+        if tracker.arrow_keys.contains(&key) {
+            tracker.pending_key_events.push((arrow_key(key), true));
+        }
         // OS auto-repeats of hidden keys must stay hidden or they would re-assert the key.
         return tracker.captured_keys.contains(&key)
             || tracker.swallowed_modifiers.contains(&key)
@@ -279,7 +287,11 @@ fn handle_key_press(
         tracker.forwarded_modifiers.is_empty()
     } else {
         match state.mode {
-            Mode::Insert => false,
+            Mode::Insert => {
+                ARROW_SHORTCUT_ENABLED
+                    && is_move_key(key)
+                    && tracker.held_keys.contains(&KEY_ARROW_SHORTCUT)
+            }
             Mode::Normal => normal_mode_captures(&tracker, key),
         }
     };
@@ -296,6 +308,8 @@ fn handle_key_press(
             }
         } else if key == KEY_TOGGLE_OVERLAY {
             state.show_overlays = !state.show_overlays;
+        } else if state.mode == Mode::Insert {
+            tracker.arrow_keys.insert(key);
         } else {
             if !is_jump_key(key) {
                 state.pending_subcell = None;
@@ -308,7 +322,11 @@ fn handle_key_press(
         false
     };
 
-    sync_movement_modifier_ghosting(&state, &mut tracker);
+    sync_modifier_ghosting(&state, &mut tracker);
+    // After ghosting, so the arrow reaches the OS without KEY_ARROW_SHORTCUT.
+    if should_capture && tracker.arrow_keys.contains(&key) {
+        tracker.pending_key_events.push((arrow_key(key), true));
+    }
 
     state.motion_needed = true;
     drop(state);
@@ -367,6 +385,9 @@ fn handle_key_release(
     tracker
         .forwarded_modifiers
         .retain(|modifier| *modifier != key);
+    if tracker.arrow_keys.remove(&key) {
+        tracker.pending_key_events.push((arrow_key(key), false));
+    }
 
     let mut state = shared.lock().expect("shared state poisoned");
     update_runtime_modifier_state(&mut state, key, false);
@@ -395,7 +416,7 @@ fn handle_key_release(
         }
     }
 
-    sync_movement_modifier_ghosting(&state, &mut tracker);
+    sync_modifier_ghosting(&state, &mut tracker);
     drop(state);
     drop(tracker);
 
@@ -622,27 +643,45 @@ fn update_runtime_modifier_state(state: &mut SharedState, key: Key, is_down: boo
 // are forwarded to the OS when pressed idle, but must be hidden while ViMouse moves or scrolls:
 // a held Shift turns a vertical synthetic wheel horizontal, and mid-action clicks should not
 // carry them. A ghost key-release hides them when movement starts; a ghost key-press restores
-// them once movement stops. Forwarded foreign modifiers (Ctrl/Meta) are left visible so chords
-// like Ctrl+scroll reach apps intact.
-fn sync_movement_modifier_ghosting(state: &SharedState, tracker: &mut HookTracker) {
+// them once movement stops. KEY_ARROW_SHORTCUT is ghosted the same way while arrows are sent,
+// so Alt+K arrives as Up rather than Alt+Up. Forwarded foreign modifiers (Ctrl/Meta) are left
+// visible so chords like Ctrl+scroll or Ctrl+arrow reach apps intact.
+fn sync_modifier_ghosting(state: &SharedState, tracker: &mut HookTracker) {
     let moving = movement_active(&state.pressed_keys);
+    let sending_arrows = !tracker.arrow_keys.is_empty();
 
-    for key in runtime_modifiers() {
+    for key in runtime_modifiers().chain([KEY_ARROW_SHORTCUT]) {
         if !is_os_modifier(key) {
             continue;
         }
 
-        let want_ghosted = moving && tracker.forwarded_modifiers.contains(&key);
+        let want_ghosted = tracker.forwarded_modifiers.contains(&key)
+            && ((moving && is_runtime_modifier(key))
+                || (sending_arrows && key == KEY_ARROW_SHORTCUT));
         let is_ghosted = tracker.ghosted_modifiers.contains(&key);
 
         if want_ghosted && !is_ghosted {
             tracker.ghosted_modifiers.insert(key);
+            push_menu_mask(tracker);
             tracker.pending_key_events.push((key, false));
         } else if !want_ghosted && is_ghosted {
             tracker.ghosted_modifiers.remove(&key);
             tracker.pending_key_events.push((key, true));
+            push_menu_mask(tracker);
         }
     }
+}
+
+// Windows treats a lone Alt/Win press+release as a tap (menu bar, Start menu). Tapping an
+// unassigned key (0xE8, AutoHotkey's menu mask) beside each ghost event keeps it from reading so.
+fn push_menu_mask(tracker: &mut HookTracker) {
+    #[cfg(target_os = "windows")]
+    tracker
+        .pending_key_events
+        .extend([(Key::Unknown(0xE8), true), (Key::Unknown(0xE8), false)]);
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = tracker;
 }
 
 fn collect_pending_actions(shared: &Shared, delta_seconds: f64, actions: &mut Vec<Action>) {
@@ -1022,6 +1061,15 @@ fn movement_active(keys: &HashSet<Key>) -> bool {
 
 fn is_move_key(key: Key) -> bool {
     MOVE_KEYS.contains(&key)
+}
+
+fn arrow_key(move_key: Key) -> Key {
+    match move_key {
+        KEY_MOVE_LEFT => Key::LeftArrow,
+        KEY_MOVE_DOWN => Key::DownArrow,
+        KEY_MOVE_UP => Key::UpArrow,
+        _ => Key::RightArrow,
+    }
 }
 
 fn is_mouse_key(key: Key) -> bool {

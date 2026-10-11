@@ -116,6 +116,10 @@ pub const KEYS_MARK: &[Key] = &[
 pub const KEY_UNMARK: Key = Key::ShiftLeft; // Hold + KEYS_MARK to unmark; recommend using a modifier or non-text key
 pub const KEY_UNMARK_ALL: Key = Key::BackQuote; // KEY_UNMARK + KEY_UNMARK_ALL to remove all marks
 
+// Arrow shortcut (only works in Insert mode)
+pub const ARROW_SHORTCUT_ENABLED: bool = true; // Whether arrow shortcuts are enabled
+pub const KEY_ARROW_SHORTCUT: Key = Key::Alt; // Hold with KEY_MOVE keys to send arrow key inputs
+
 // Keys that always pass through to the OS, even in Normal mode. Unmappable keys pass through by default.
 pub const KEYS_EXEMPT: &[Key] = &[
     Key::Return,
